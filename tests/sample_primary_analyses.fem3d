@@ -1,0 +1,57 @@
+FEM3D 0.7
+MATERIAL 1 "Steel" 200000000000 0.3 7850
+SECTION 1 "Section" 0.01 8e-6 3e-6 1e-6
+GROUP 1 "Beam"
+LOADCASE 1 "Tip load"
+NODE 1 0 0 0 1 1 1 1 1 1
+NODE 2 5 0 0 0 0 0 0 0 0
+ELEMENT 1 BEAM3D 1 1 0 1 1 2
+LOAD 1 2 1 0 0 -10000 0 0 0
+[ANALYSIS_CASE 1]
+Name=Linear Static - Tip Load
+Type=LinearStatic
+LoadCase=1
+ResultID=
+[SETTINGS]
+Solver=Reference dense LDL^T
+MatrixStorage=Dense
+PivotTolerance=1e-12
+ResidualTolerance=1e-8
+CheckEquilibrium=1
+CheckEnergy=1
+RecoverElementForces=1
+StoreSolverData=1
+[END_ANALYSIS_CASE]
+[ANALYSIS_CASE 2]
+Name=Linear Buckling - Tip Load
+Type=LinearBuckling
+LoadCase=1
+ResultID=
+[SETTINGS]
+Solver=Reference dense eigen solver
+MatrixStorage=Dense
+EigenvalueCount=5
+Shift=0
+Tolerance=1e-8
+MaxIterations=200
+NormalizeModes=1
+StoreModeShapes=1
+CheckSymmetry=1
+[END_ANALYSIS_CASE]
+[ANALYSIS_CASE 3]
+Name=Nonlinear Static - Tip Load
+Type=NonlinearStatic
+LoadCase=1
+ResultID=
+[SETTINGS]
+Solver=Newton-Raphson reference
+InitialLoadSteps=10
+MaxIterations=25
+ForceTolerance=1e-8
+DisplacementTolerance=1e-8
+MinimumStep=1e-3
+MaximumStep=0.2
+LineSearch=1
+MaxCutbacks=8
+StoreIterationHistory=1
+[END_ANALYSIS_CASE]

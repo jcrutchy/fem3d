@@ -1,0 +1,9 @@
+FEM3D_SOLVER_MANIFEST 1
+SolverID=FEM3D_LinStatic
+SolverVersion=0.12.0
+SolverKernel=ReferenceDenseLDLT
+SolverKernelRevision=RS-001
+ModelContract=FEM3D_ASCII_0.7
+ResultContract=FEM3D_RESULT_0.7
+ValidationStatus=REFERENCE_VALIDATION_REQUIRED
+Isolation=SOLVER_CORE_SNAPSHOT

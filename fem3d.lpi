@@ -1,0 +1,346 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CONFIG>
+  <ProjectOptions>
+    <Version Value="12"/>
+    <General>
+      <Title Value="FEM3D"/>
+    </General>
+    <BuildModes>
+      <Item Name="default" Default="True"/>
+    </BuildModes>
+    <PublishOptions>
+      <Version Value="2"/>
+    </PublishOptions>
+    <RunParams>
+      <FormatVersion Value="2"/>
+    </RunParams>
+    <RequiredPackages>
+      <Item>
+        <PackageName Value="lazopenglcontext"/>
+      </Item>
+      <Item>
+        <PackageName Value="LCL"/>
+      </Item>
+    </RequiredPackages>
+    <Units>
+      <Unit>
+        <Filename Value="fem3d.lpr"/>
+        <IsPartOfProject Value="True"/>
+        <IsVisibleTab Value="True"/>
+        <CursorPos X="35" Y="13"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/MainUnit.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="1"/>
+        <TopLine Value="131"/>
+        <CursorPos X="23" Y="145"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMTypes.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="15"/>
+        <CursorPos X="11" Y="7"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMModel.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="9"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMElements.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="5"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMMatrix.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="8"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMAnalysis.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="2"/>
+        <TopLine Value="105"/>
+        <CursorPos X="17" Y="131"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMIO.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="7"/>
+        <TopLine Value="40"/>
+        <CursorPos X="45" Y="60"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMView.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="18"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMSelection.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="13"/>
+        <TopLine Value="31"/>
+        <CursorPos X="12" Y="44"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMVerification.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="17"/>
+        <CursorPos X="24" Y="13"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMValidation.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="16"/>
+        <CursorPos X="49" Y="6"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMAnalysisCases.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="3"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMHash.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="6"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMAnalysisUI.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="4"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMSolverProcess.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="14"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMResults.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="12"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMResultFields.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="11"/>
+        <TopLine Value="174"/>
+        <CursorPos X="27" Y="189"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="src/FEMOpenGLView.pas"/>
+        <IsPartOfProject Value="True"/>
+        <EditorIndex Value="10"/>
+        <TopLine Value="3"/>
+        <CursorPos X="80" Y="8"/>
+        <UsageCount Value="23"/>
+        <Loaded Value="True"/>
+      </Unit>
+      <Unit>
+        <Filename Value="../../lazarus/lcl/forms.pp"/>
+        <UnitName Value="Forms"/>
+        <EditorIndex Value="-1"/>
+        <TopLine Value="645"/>
+        <CursorPos X="3" Y="513"/>
+        <UsageCount Value="10"/>
+      </Unit>
+      <Unit>
+        <Filename Value="../../lazarus/lcl/comctrls.pp"/>
+        <UnitName Value="ComCtrls"/>
+        <EditorIndex Value="-1"/>
+        <TopLine Value="2797"/>
+        <CursorPos X="3" Y="2805"/>
+        <UsageCount Value="10"/>
+      </Unit>
+      <Unit>
+        <Filename Value="../../lazarus/lcl/interfaces/win32/win32wscontrols.pp"/>
+        <UnitName Value="Win32WSControls"/>
+        <EditorIndex Value="-1"/>
+        <CursorPos Y="227"/>
+        <UsageCount Value="10"/>
+      </Unit>
+    </Units>
+    <JumpHistory HistoryIndex="29">
+      <Position>
+        <Filename Value="src/FEMAnalysis.pas"/>
+        <Caret Line="58" Column="30" TopLine="42"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMIO.pas"/>
+        <Caret Line="57" Column="47" TopLine="36"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMIO.pas"/>
+        <Caret Line="85" Column="5" TopLine="51"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMAnalysis.pas"/>
+        <Caret Line="131" Column="17" TopLine="105"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMIO.pas"/>
+        <Caret Line="49" Column="46" TopLine="35"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMIO.pas"/>
+        <Caret Line="60" Column="66" TopLine="40"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMSelection.pas"/>
+        <Caret Line="42" Column="47" TopLine="24"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMSelection.pas"/>
+        <Caret Line="44" Column="52" TopLine="31"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMResultFields.pas"/>
+        <Caret Line="113" Column="13" TopLine="102"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMResultFields.pas"/>
+        <Caret Line="213" Column="53" TopLine="198"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMResultFields.pas"/>
+        <Caret Line="112" Column="234" TopLine="95"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMResultFields.pas"/>
+        <Caret Line="92" Column="57" TopLine="82"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMResultFields.pas"/>
+        <Caret Line="141" Column="47" TopLine="130"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMResultFields.pas"/>
+        <Caret Line="217" Column="57" TopLine="198"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMResultFields.pas"/>
+        <Caret Line="144" Column="88" TopLine="130"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMResultFields.pas"/>
+        <Caret Line="189" Column="27" TopLine="174"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMOpenGLView.pas"/>
+        <Caret Line="7" Column="38"/>
+      </Position>
+      <Position>
+        <Filename Value="src/FEMOpenGLView.pas"/>
+        <Caret Line="8" Column="80" TopLine="3"/>
+      </Position>
+      <Position>
+        <Filename Value="src/MainUnit.pas"/>
+        <Caret Line="15" Column="23" TopLine="11"/>
+      </Position>
+      <Position>
+        <Filename Value="src/MainUnit.pas"/>
+        <Caret Line="24" Column="33" TopLine="11"/>
+      </Position>
+      <Position>
+        <Filename Value="src/MainUnit.pas"/>
+        <Caret Line="52" Column="91" TopLine="34"/>
+      </Position>
+      <Position>
+        <Filename Value="src/MainUnit.pas"/>
+        <Caret Line="100" Column="9" TopLine="76"/>
+      </Position>
+      <Position>
+        <Filename Value="src/MainUnit.pas"/>
+        <Caret Line="220" Column="209" TopLine="201"/>
+      </Position>
+      <Position>
+        <Filename Value="src/MainUnit.pas"/>
+        <Caret Line="226" Column="71" TopLine="206"/>
+      </Position>
+      <Position>
+        <Filename Value="fem3d.lpr"/>
+        <Caret Line="11" Column="15"/>
+      </Position>
+      <Position>
+        <Filename Value="src/MainUnit.pas"/>
+        <Caret Line="149" Column="27" TopLine="125"/>
+      </Position>
+      <Position>
+        <Filename Value="fem3d.lpr"/>
+        <Caret Line="5" Column="56"/>
+      </Position>
+      <Position>
+        <Filename Value="src/MainUnit.pas"/>
+        <Caret Line="137" Column="44" TopLine="79"/>
+      </Position>
+      <Position>
+        <Filename Value="src/MainUnit.pas"/>
+        <Caret Line="597" Column="62" TopLine="580"/>
+      </Position>
+      <Position>
+        <Filename Value="src/MainUnit.pas"/>
+        <Caret Line="110" Column="75" TopLine="84"/>
+      </Position>
+    </JumpHistory>
+  </ProjectOptions>
+  <CompilerOptions>
+    <Version Value="11"/>
+    <Target>
+      <Filename Value="fem3d"/>
+    </Target>
+    <SearchPaths>
+      <IncludeFiles Value="$(ProjOutDir)"/>
+      <OtherUnitFiles Value="src"/>
+      <UnitOutputDirectory Value="lib/$(TargetCPU)-$(TargetOS)"/>
+    </SearchPaths>
+    <Parsing>
+      <SyntaxOptions>
+        <UseAnsiStrings Value="False"/>
+      </SyntaxOptions>
+    </Parsing>
+    <CodeGeneration>
+      <TargetCPU Value="x86_64"/>
+    </CodeGeneration>
+    <Linking>
+      <Debugging>
+        <DebugInfoType Value="dsDwarf3"/>
+      </Debugging>
+    </Linking>
+  </CompilerOptions>
+</CONFIG>
