@@ -1,4 +1,4 @@
-# Sectioning and Clipping — FEM3D v0.20
+# Sectioning and Clipping â€” FEM3D v0.20
 
 Sectioning is viewport/presentation state only. It never modifies the FEM model,
 mesh connectivity, solver input, or engineering data.
@@ -17,3 +17,4 @@ mesh connectivity, solver input, or engineering data.
 - Solid clipped-face caps
 - Saved section states
 - Result-aware section inspection
+

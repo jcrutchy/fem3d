@@ -1,4 +1,4 @@
-# FEM3D Architecture — Process-Isolated Solvers
+# FEM3D Architecture â€” Process-Isolated Solvers
 
 ## Principle
 
@@ -64,3 +64,4 @@ Linear Static results are exposed to the GUI through `TResultField` objects. A f
 The first result fields include displacement components/magnitude, reaction components/magnitude and beam axial stress. The viewport can contour any scalar field using the same renderer and can display the displaced geometry using the translational displacement fields.
 
 A deterministic expression evaluator provides arithmetic and a small set of mathematical functions (`ABS`, `SQRT`, `MIN`, `MAX`) over compatible result fields. It is intentionally not a scripting engine. The intended future use is engineering-derived quantities such as utilisation, safety factors and fatigue-life equations while keeping the calculation auditable.
+

@@ -8,7 +8,7 @@ The viewport camera is presentation state and is deliberately independent of the
 
 - **Perspective** provides a conventional engineering 3D camera with adjustable field of view.
 - **Orthographic** removes perspective convergence and is useful for inspection and technical drawings.
-- **FOV** is available in degrees for perspective mode and is constrained to a sensible 10–120 degree range.
+- **FOV** is available in degrees for perspective mode and is constrained to a sensible 10â€“120 degree range.
 - **Near clip** is independently configurable. This is important when the engineer moves the camera inside a structure and needs to inspect the opposite face or interior.
 
 ### Navigation
@@ -29,3 +29,4 @@ Front, rear, left, right, top, bottom and isometric views are available. They ch
 Camera operations are strictly display operations. They do not modify analysis data, model coordinates, solver settings, or persisted solver provenance.
 
 The next viewport increment can add saved viewpoints, view-normal-to-selected-face/element operations, camera inertia, and a controlled walk/fly mode without coupling any of those features to the numerical kernel.
+

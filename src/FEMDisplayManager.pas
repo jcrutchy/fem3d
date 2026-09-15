@@ -186,3 +186,4 @@ function TDisplayManager.HiddenElementCount:Integer; begin Result:=FHiddenElemen
 function TDisplayManager.IsolationActive:Boolean; begin Result:=FHasIsolation; end;
 
 end.
+

@@ -101,3 +101,4 @@ var I,J:Integer;
 begin for I:=0 to 2 do for J:=0 to 2 do Result[I,J]:=A[J,I]; end;
 
 end.
+

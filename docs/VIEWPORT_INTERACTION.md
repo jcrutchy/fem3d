@@ -30,3 +30,4 @@ A selected set of elements can be isolated directly from the viewport. Isolation
 The interaction layer is intentionally kept outside the numerical solver. The solver consumes model/analysis data; the viewport consumes model, selection, display and result data.
 
 Future interaction work should build on this layer with window selection, connected selection, selection filters, cursor-centred zoom, view-normal commands, saved viewpoints and more sophisticated clipping/manipulators.
+

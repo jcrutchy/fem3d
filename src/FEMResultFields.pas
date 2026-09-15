@@ -230,3 +230,4 @@ function TResultExpressionEvaluator.Evaluate(const Expression:string; Location:T
 begin FText:=Expression;FPos:=1;FLocation:=Location;FEntityID:=EntityID;ErrorText:='';Result:=ParseExpression(V);SkipSpaces;if Result and (FPos<=Length(FText)) then Result:=False;if not Result then ErrorText:=Format('Invalid result expression near character %d.',[FPos]); end;
 
 end.
+

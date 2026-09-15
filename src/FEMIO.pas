@@ -78,8 +78,150 @@ begin
 end;
 
 class procedure TGeometryImporter.ImportDXF(const M:TFEMModel; const FileName:string);
-var F:TextFile; Code:Integer; S,S2:string; X1,Y1,Z1,X2,Y2,Z2:Double; N1,N2,Mat,Sec:Integer;
-begin Mat:=0; Sec:=0; AssignFile(F,FileName); Reset(F); try while not Eof(F) do begin ReadLn(F,S); if not TryStrToInt(Trim(S),Code) then Continue; if Eof(F) then Break; ReadLn(F,S2); if (Code=0) and SameText(Trim(S2),'POINT') then begin ReadLn(F,S);ReadLn(F,S2);X1:=StrToFloat(Trim(S2));ReadLn(F,S);ReadLn(F,S2);Y1:=StrToFloat(Trim(S2));ReadLn(F,S);ReadLn(F,S2);Z1:=StrToFloat(Trim(S2));M.AddNode(Vec3(X1,Y1,Z1)); end else if (Code=0) and SameText(Trim(S2),'LINE') then begin ReadLn(F,S);ReadLn(F,S2);X1:=StrToFloat(Trim(S2));ReadLn(F,S);ReadLn(F,S2);Y1:=StrToFloat(Trim(S2));ReadLn(F,S);ReadLn(F,S2);Z1:=StrToFloat(Trim(S2));ReadLn(F,S);ReadLn(F,S2);X2:=StrToFloat(Trim(S2));ReadLn(F,S);ReadLn(F,S2);Y2:=StrToFloat(Trim(S2));ReadLn(F,S);ReadLn(F,S2);Z2:=StrToFloat(Trim(S2));N1:=M.AddNode(Vec3(X1,Y1,Z1));N2:=M.AddNode(Vec3(X2,Y2,Z2));if Mat=0 then Mat:=M.AddMaterial('Imported',1,0.3,0);if Sec=0 then Sec:=M.AddSection('Imported',1,1,1,1);M.AddElement('BEAM3D',[N1,N2],Mat,Sec,0,0,0);end; end; finally CloseFile(F);end;end;
-class procedure TGeometryImporter.ImportOBJ(const M:TFEMModel; const FileName:string);var F:TextFile;S:string;P:TStringList;X,Y,Z:Double;begin P:=TStringList.Create;P.Delimiter:=' ';P.StrictDelimiter:=True;AssignFile(F,FileName);Reset(F);try while not Eof(F) do begin ReadLn(F,S);S:=Trim(S);if (Length(S)>2) and (Copy(S,1,2)='v ') then begin P.DelimitedText:=S;if P.Count>=4 then begin X:=StrToFloat(P[1]);Y:=StrToFloat(P[2]);Z:=StrToFloat(P[3]);M.AddNode(Vec3(X,Y,Z));end;end;end;finally CloseFile(F);P.Free;end;end;
-class procedure TGeometryImporter.ImportIGES(const M:TFEMModel; const FileName:string);var F:TextFile;S,T:string;X,Y,Z:Double;begin AssignFile(F,FileName);Reset(F);try while not Eof(F) do begin ReadLn(F,S);if Length(S)<72 then Continue;T:=Trim(Copy(S,73,8));if T='116' then begin X:=StrToFloatDef(Trim(Copy(S,10,8)),0);Y:=StrToFloatDef(Trim(Copy(S,18,8)),0);Z:=StrToFloatDef(Trim(Copy(S,26,8)),0);M.AddNode(Vec3(X,Y,Z));end;end;finally CloseFile(F);end;end;
+type TPair=record Code:Integer; Value:string; end;
+var
+  F:TextFile; Lines:TStringList; I,J,Code:Integer; Ent:string;
+  P:TStringList; X1,Y1,Z1,X2,Y2,Z2,Elev:Double;
+  N1,N2,Mat,Sec:Integer; Layer:string;
+  VX,VY,VZ:Double; LastNode:Integer;
+  function NodeAt(const X,Y,Z,Tol:Double):Integer;
+  var K:Integer; D2:Double;
+  begin
+    for K:=0 to High(M.Nodes) do begin
+      D2:=Sqr(M.Nodes[K].Position.X-X)+Sqr(M.Nodes[K].Position.Y-Y)+Sqr(M.Nodes[K].Position.Z-Z);
+      if D2<=Tol*Tol then Exit(M.Nodes[K].ID);
+    end;
+    Result:=M.AddNode(Vec3(X,Y,Z));
+  end;
+  function ValAt(const A:TStringList; C:Integer; const Default:string=''):string;
+  var K:Integer;
+  begin
+    Result:=Default;
+    for K:=0 to A.Count-1 do if StrToIntDef(A.Names[K],-99999)=C then Exit(A.ValueFromIndex[K]);
+  end;
+  procedure AddLine(const AX1,AY1,AZ1,AX2,AY2,AZ2:Double);
+  begin
+    N1:=NodeAt(AX1,AY1,AZ1,1E-8); N2:=NodeAt(AX2,AY2,AZ2,1E-8);
+    if N1=N2 then Exit;
+    if Mat=0 then Mat:=M.AddMaterial('Imported DXF',1.0,0.3,0.0);
+    if Sec=0 then Sec:=M.AddSection('Imported DXF section',1.0,1.0,1.0,1.0);
+    M.AddElement('BEAM3D',[N1,N2],Mat,Sec,0.0,0,0);
+  end;
+begin
+  Lines:=TStringList.Create; P:=TStringList.Create; P.NameValueSeparator:='=';
+  AssignFile(F,FileName); Reset(F);
+  try
+    while not Eof(F) do begin ReadLn(F,Ent); Lines.Add(Trim(Ent)); if Eof(F) then Break; ReadLn(F,Ent); Lines.Add(Trim(Ent)); end;
+  finally CloseFile(F); end;
+  try
+    Mat:=0; Sec:=0; I:=0; LastNode:=-1; Layer:='';
+    while I<Lines.Count-1 do begin
+      Code:=StrToIntDef(Lines[I],-1);
+      if (Code=0) and SameText(Lines[I+1],'ENDSEC') then Break;
+      if (Code<>0) or not SameText(Lines[I+1],'ENTITIES') then begin Inc(I,2); Continue; end;
+      Inc(I,2);
+      while I<Lines.Count-1 do begin
+        if (StrToIntDef(Lines[I],-1)=0) and SameText(Lines[I+1],'ENDSEC') then Break;
+        if StrToIntDef(Lines[I],-1)<>0 then begin Inc(I,2); Continue; end;
+        Ent:=UpperCase(Lines[I+1]); Inc(I,2); P.Clear;
+        while I<Lines.Count-1 do begin
+          Code:=StrToIntDef(Lines[I],-1); if Code=0 then Break;
+          if P.Count=0 then P.Add(IntToStr(Code)+'='+Lines[I+1]) else P.Add(IntToStr(Code)+'='+Lines[I+1]); Inc(I,2);
+        end;
+        if Ent='LINE' then begin
+          X1:=StrToFloatDef(ValAt(P,10,'0'),0); Y1:=StrToFloatDef(ValAt(P,20,'0'),0); Z1:=StrToFloatDef(ValAt(P,30,'0'),0);
+          X2:=StrToFloatDef(ValAt(P,11,'0'),0); Y2:=StrToFloatDef(ValAt(P,21,'0'),0); Z2:=StrToFloatDef(ValAt(P,31,'0'),0); AddLine(X1,Y1,Z1,X2,Y2,Z2);
+        end else if Ent='POINT' then begin
+          X1:=StrToFloatDef(ValAt(P,10,'0'),0); Y1:=StrToFloatDef(ValAt(P,20,'0'),0); Z1:=StrToFloatDef(ValAt(P,30,'0'),0); NodeAt(X1,Y1,Z1,1E-8);
+        end else if Ent='LWPOLYLINE' then begin
+          Elev:=StrToFloatDef(ValAt(P,38,'0'),0); X1:=0;Y1:=0;Z1:=Elev; LastNode:=-1;
+          for J:=0 to P.Count-1 do if StrToIntDef(P.Names[J],-1)=10 then begin
+            X1:=StrToFloatDef(P.ValueFromIndex[J],0); Y1:=0; if (J+1<P.Count) and (StrToIntDef(P.Names[J+1],-1)=20) then Y1:=StrToFloatDef(P.ValueFromIndex[J+1],0);
+            if LastNode<0 then LastNode:=NodeAt(X1,Y1,Z1,1E-8) else begin N2:=NodeAt(X1,Y1,Z1,1E-8); if N2<>LastNode then AddLine(M.Nodes[M.FindNode(LastNode)].Position.X,M.Nodes[M.FindNode(LastNode)].Position.Y,M.Nodes[M.FindNode(LastNode)].Position.Z,X1,Y1,Z1); LastNode:=N2; end;
+          end;
+        end;
+        if (I<Lines.Count-1) and (StrToIntDef(Lines[I],-1)=0) then Continue;
+      end;
+      Break;
+    end;
+  finally Lines.Free; P.Free; end;
+end;
+
+class procedure TGeometryImporter.ImportOBJ(const M:TFEMModel; const FileName:string);
+var F:TextFile;S:string;P:TStringList;X,Y,Z:Double;
+begin P:=TStringList.Create;P.Delimiter:=' ';P.StrictDelimiter:=True;AssignFile(F,FileName);Reset(F);try while not Eof(F) do begin ReadLn(F,S);S:=Trim(S);if (Length(S)>2) and (Copy(S,1,2)='v ') then begin P.DelimitedText:=S;if P.Count>=4 then begin X:=StrToFloat(P[1]);Y:=StrToFloat(P[2]);Z:=StrToFloat(P[3]);M.AddNode(Vec3(X,Y,Z));end;end;end;finally CloseFile(F);P.Free;end;end;
+
+class procedure TGeometryImporter.ImportIGES(const M:TFEMModel; const FileName:string);
+var
+  F:TextFile; S,Data,Tok:string; Section:string; I,K,Typ,Ptr,Seq:Integer;
+  DMap,PMap:TStringList; Fields:TStringList;
+  X1,Y1,Z1,X2,Y2,Z2:Double; N1,N2,Mat,Sec:Integer;
+  function DField(const S:string; A,B:Integer):string;
+  begin Result:=Trim(Copy(S,A,B)); end;
+  function ParseReal(const S:string):Double;
+  begin Result:=StrToFloatDef(Trim(S),0); end;
+  function ParamData(const PointerID:Integer):string;
+  var R,Posn:Integer; L:string;
+  begin
+    Result:='';
+    Posn:=PMap.IndexOfName(IntToStr(PointerID));
+    if Posn<0 then Exit;
+    R:=Posn;
+    while R<PMap.Count do begin
+      L:=PMap.ValueFromIndex[R];
+      if Result='' then Result:=L else Result:=Result+L;
+      if Pos(';',L)>0 then Break;
+      Inc(R);
+    end;
+  end;
+  procedure AddLineFromParams(const S:string);
+  var A:TStringList; J:Integer;
+  begin
+    A:=TStringList.Create; A.StrictDelimiter:=True; A.Delimiter:=',';
+    try
+      A.DelimitedText:=StringReplace(S,';',',',[rfReplaceAll]);
+      if A.Count<7 then Exit;
+      if StrToIntDef(Trim(A[0]),0)<>110 then Exit;
+      { 110 line: entity type, x1,y1,z1,x2,y2,z2 }
+      X1:=ParseReal(A[1]); Y1:=ParseReal(A[2]); Z1:=ParseReal(A[3]);
+      X2:=ParseReal(A[4]); Y2:=ParseReal(A[5]); Z2:=ParseReal(A[6]);
+      N1:=M.AddNode(Vec3(X1,Y1,Z1)); N2:=M.AddNode(Vec3(X2,Y2,Z2));
+      if N1=N2 then Exit;
+      if Mat=0 then Mat:=M.AddMaterial('Imported IGES',1.0,0.3,0.0);
+      if Sec=0 then Sec:=M.AddSection('Imported IGES section',1.0,1.0,1.0,1.0);
+      M.AddElement('BEAM3D',[N1,N2],Mat,Sec,0.0,0,0);
+    finally A.Free; end;
+  end;
+begin
+  { Conservative IGES wireframe importer. It follows the standard D/P section
+    relationship and imports Type 110 lines. Curves/surfaces are not silently
+    converted to FEM elements until a dedicated CAD-geometry layer exists. }
+  DMap:=TStringList.Create; PMap:=TStringList.Create; Fields:=TStringList.Create;
+  DMap.NameValueSeparator:='='; PMap.NameValueSeparator:='=';
+  AssignFile(F,FileName); Reset(F);
+  try
+    Section:='';
+    while not Eof(F) do begin
+      ReadLn(F,S);
+      if Length(S)<8 then Continue;
+      Section:=UpperCase(Copy(S,73,1));
+      if Section='D' then begin
+        Typ:=StrToIntDef(DField(S,1,8),0); Ptr:=StrToIntDef(DField(S,9,8),0); Seq:=StrToIntDef(DField(S,73,8),0);
+        if Typ<>0 then DMap.Add(IntToStr(Seq)+'='+IntToStr(Typ)+','+IntToStr(Ptr));
+      end else if Section='P' then begin
+        Seq:=StrToIntDef(DField(S,73,8),0);
+        PMap.Add(IntToStr(Seq)+'='+Copy(S,1,64));
+      end;
+    end;
+  finally CloseFile(F); end;
+  try
+    Mat:=0; Sec:=0;
+    for I:=0 to DMap.Count-1 do begin
+      Fields.Clear; Fields.Delimiter:=','; Fields.StrictDelimiter:=True; Fields.DelimitedText:=DMap.ValueFromIndex[I];
+      if Fields.Count<2 then Continue;
+      Typ:=StrToIntDef(Fields[0],0); Ptr:=StrToIntDef(Fields[1],0);
+      if Typ=110 then begin Data:=ParamData(Ptr); if Data<>'' then AddLineFromParams(Data); end;
+    end;
+  finally DMap.Free; PMap.Free; Fields.Free; end;
+end;
 end.

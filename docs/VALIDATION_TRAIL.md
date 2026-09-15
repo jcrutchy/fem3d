@@ -58,7 +58,7 @@ The source archive was prepared in an environment without Lazarus/FreePascal, so
 
 Therefore the status of the Pascal regression suite in this archive is:
 
-**DEFINED — NOT EXECUTED IN THIS ENVIRONMENT**
+**DEFINED â€” NOT EXECUTED IN THIS ENVIRONMENT**
 
 The first build on the target Lazarus/FPC environment should run `tests/verify.lpr` and preserve the console output as the first executable validation record for this revision.
 
@@ -98,10 +98,10 @@ Analysis results retain the audit records as data. The formatted message is a pr
 The beam end-force verification uses the element internal force vector `K_e u_e`: for a downward tip load, the tip-end force component balances the applied load and the fixed-end component gives the corresponding support-side internal force. The verification therefore checks both ends, not merely the global reaction.
 
 ## v0.7 solver-process verification status
-- Architecture reviewed statically: GUI → prepared FEM3D ASCII input → independent `FEM3D_LinStatic.exe` → `.fem3dres` ASCII output.
+- Architecture reviewed statically: GUI â†’ prepared FEM3D ASCII input â†’ independent `FEM3D_LinStatic.exe` â†’ `.fem3dres` ASCII output.
 - CLI contract and exit codes are documented in `docs/SOLVER_INTERFACE.md`.
 - Persistence and provenance code paths are present in `FEMAnalysisCases`, `FEMIO`, `FEMHash`, and `FEMAnalysis`.
-- Native Pascal compilation/execution is **DEFINED — NOT EXECUTED IN THIS ENVIRONMENT** because Lazarus/FreePascal is not installed here.
+- Native Pascal compilation/execution is **DEFINED â€” NOT EXECUTED IN THIS ENVIRONMENT** because Lazarus/FreePascal is not installed here.
 - No claim is made that the new Windows executable has been compiler-verified yet.
 
 ## v0.7.1 additions
@@ -128,3 +128,4 @@ Before treating the result renderer as production capability, verify at minimum:
 ## v0.10 inspection additions
 
 Validation findings now carry an optional entity reference (`Node` or `Element` plus ID), so the UI can later make warnings directly selectable in the viewport. Additional geometry checks include coincident nodes, small polygon angles, and quadrilateral face warpage. These checks are diagnostics only and do not silently modify the model.
+

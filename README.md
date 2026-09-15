@@ -1,6 +1,19 @@
 # FEM3D
 
-**Current increment: v0.18 — viewport interaction pass** v0.5 — Verification & Trust Foundation
+Current increment: v0.35 - Viewport Box Selection.
+
+The viewport supports perspective/orthographic inspection, engineering selection, interactive model creation/editing, and now window/crossing box selection with Ctrl-additive selection.
+
+## v0.21 — Engineering viewport
+
+The current viewport increment makes camera-aware picking and the existing sectioning foundation part of the same rendering path.
+
+- Perspective/orthographic screen-ray picking for nodes and line elements.
+- Four-plane clipping state is now consumed by OpenGL; the current GUI drives the primary plane.
+- Primary clipping can reverse the retained side.
+- Presentation-only sectioning remains outside the solver boundary.
+
+# FEM3D v0.30 — Interactive Modelling and Beam Meshing
 
 Native Lazarus/FreePascal 3D finite-element application foundation.
 
@@ -52,10 +65,10 @@ The trail is currently attached to the analysis result message. It will become a
 
 Current benchmarks:
 
-1. cantilever bending in global Z — analytical Euler-Bernoulli solution;
-2. cantilever bending in global Y — analytical solution;
-3. cantilever axial extension — `PL/EA`;
-4. cantilever torsional rotation — `TL/GJ`;
+1. cantilever bending in global Z â€” analytical Euler-Bernoulli solution;
+2. cantilever bending in global Y â€” analytical solution;
+3. cantilever axial extension â€” `PL/EA`;
+4. cantilever torsional rotation â€” `TL/GJ`;
 5. support reaction equilibrium;
 6. rigid-body mechanism/singularity detection;
 7. model validation error detection.
@@ -64,11 +77,11 @@ Current benchmarks:
 
 FEM3D should distinguish three different claims:
 
-**Verification** — the implementation reproduces a known mathematical formulation.
+**Verification** â€” the implementation reproduces a known mathematical formulation.
 
-**Validation** — the chosen formulation represents the intended physical behaviour with acceptable engineering accuracy.
+**Validation** â€” the chosen formulation represents the intended physical behaviour with acceptable engineering accuracy.
 
-**Production readiness** — the implementation has adequate numerical robustness, performance, documentation, regression coverage and failure diagnostics for its intended engineering use.
+**Production readiness** â€” the implementation has adequate numerical robustness, performance, documentation, regression coverage and failure diagnostics for its intended engineering use.
 
 Passing the current tests is only a verification milestone. It is **not** a claim that FEM3D is yet a production FEA solver.
 
@@ -108,9 +121,9 @@ Current limitation: only Linear Static using the dense reference LDL^T solver is
 
 The primary FEM3D analysis family is now centred on three engineering workflows:
 
-1. **Linear Static** — implemented through the external reference solver `FEM3D_LinStatic.exe`.
-2. **Linear Buckling** — persistent settings and external solver boundary are implemented, but numerical solving is gated pending verification of geometric stiffness and eigenvalue extraction.
-3. **Nonlinear Static** — persistent load-step/convergence settings and external solver boundary are implemented, but numerical solving is gated pending verification of nonlinear element tangents and convergence behaviour.
+1. **Linear Static** â€” implemented through the external reference solver `FEM3D_LinStatic.exe`.
+2. **Linear Buckling** â€” persistent settings and external solver boundary are implemented, but numerical solving is gated pending verification of geometric stiffness and eigenvalue extraction.
+3. **Nonlinear Static** â€” persistent load-step/convergence settings and external solver boundary are implemented, but numerical solving is gated pending verification of nonlinear element tangents and convergence behaviour.
 
 The modelling GUI prepares the analysis definition and launches a separate solver process. This keeps the numerical solver independent from the GUI and makes batch/CLI operation a first-class workflow.
 
@@ -137,6 +150,53 @@ The initial renderer provides depth-buffered 3D linework, deformed/undeformed ov
 
 The numerical solver executables are intentionally isolated from the modelling and graphics source tree. The solver projects consume snapshots under `solver/core`, while result files retain solver/kernel provenance. This means graphics and viewer development can proceed without silently changing an already validated numerical kernel.
 
-### v0.19 viewport graphics
+### v0.33 viewport graphics
 
 The OpenGL viewport now has independently switchable engineering symbol layers for loads, restraints, element local axes and coordinate-system triads. These are presentation-only and remain outside the numerical solver boundary.
+
+
+## v0.22 — 3D member body rendering
+
+The engineering viewport can now display `BEAM3D` members as faceted 3D bodies rather than centre-lines. The body is intentionally an **area-equivalent display proxy**, not a claim about the physical section shape. This keeps the existing transparent section data and solver formulation unchanged while making perspective inspection substantially more useful.
+
+Use the **Solid members** viewport toggle to switch between body and centre-line display. Element edge visibility remains separately controlled.
+
+
+## v0.23 engineering viewport feedback
+
+The viewport now maintains a separate hover/preselection state from persistent selection. Hover uses the camera-aware screen-ray picking path and is presentation-only; it does not modify the model or solver state.
+
+
+## v0.24 modelling foundation
+The GUI now has an explicit model-editing layer with node/beam creation, node movement, deletion, beam splitting, and snapshot-based undo/redo. See `docs/MODEL_EDITING.md`.
+
+
+## v0.25 interactive modelling
+
+The viewport now supports a first direct-construction workflow. **Add node** places nodes by intersecting the camera ray with an XY/XZ/YZ construction plane, with optional grid snapping. **Add beam** creates or reuses two nodes and creates BEAM3D members in sequence, making simple frame/line construction much faster than dialog-only editing. All changes continue through the model editor command layer and remain undoable. See `docs/INTERACTIVE_MODELLING.md`.
+
+## Interactive modelling
+
+The current modeller supports viewport-driven node and beam creation, construction-plane/grid snapping, beam chaining, beam splitting, conservative snapshot undo/redo, and viewport-driven node movement with a non-destructive drag preview. Model edits remain separated from the numerical solver layer.
+
+
+### Interactive modelling — v0.27
+
+The modeller now provides rubber-band feedback while creating chained BEAM3D geometry, construction-plane-aware grid snapping, and equal-length beam subdivision through the model-editing command layer. Model mutations remain undoable and invalidate stale results.
+
+
+### v0.28 modelling assignment
+
+Interactive BEAM3D creation exposes material, section and group assignment directly in the model-editing panel, while the selection inspector now remains useful before any analysis results exist.
+
+
+### v0.29 beam meshing
+
+Straight two-node BEAM3D members can now be subdivided automatically from a requested maximum element length. The mesher remains separate from the FEM solver and delegates all topology mutation to the undoable model-editing layer.
+
+### v0.31 modelling increment
+The modeller now supports batch engineering-property assignment to the current element selection. Material, beam section and group references can be assigned to multiple selected elements as one undoable operation. This establishes the pattern needed for later multi-element transformations and property editing without coupling those operations to the solver.
+
+### v0.34 CAD wireframe import
+
+FEM3D now has a more deliberate CAD-wireframe import path for structural stick models. DXF LINE/POINT/LWPOLYLINE geometry can be promoted to BEAM3D elements, and IGES Type 110 wireframe lines can be imported. Imported geometry receives placeholder engineering properties that must be reviewed before analysis. Persistent IGES surface geometry is intentionally reserved for the forthcoming CAD geometry/surface-meshing layer.

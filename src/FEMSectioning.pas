@@ -16,6 +16,8 @@ type
     function PointVisible(X,Y,Z: Double): Boolean;
   end;
 implementation
+
+uses SysUtils;
 constructor TClipState.Create; begin inherited Create; Reset; end;
 procedure TClipState.Reset;
 var I: Integer;
@@ -46,3 +48,4 @@ begin
   end;
 end;
 end.
+

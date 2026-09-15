@@ -4,10 +4,10 @@ FEM3D v0.19 introduces a renderer-owned engineering symbol layer. Symbols are pr
 
 ## Layers
 
-- Loads — translational load arrows and a compact moment glyph.
-- Restraints — translational restraint markers and rotational restraint glyphs.
-- Local axes — element local triads for supported line elements.
-- Coordinate systems — model coordinate-system triads.
+- Loads â€” translational load arrows and a compact moment glyph.
+- Restraints â€” translational restraint markers and rotational restraint glyphs.
+- Local axes â€” element local triads for supported line elements.
+- Coordinate systems â€” model coordinate-system triads.
 
 Each layer can be independently enabled from the viewport UI.
 
@@ -20,3 +20,4 @@ Each layer can be independently enabled from the viewport UI.
 5. The renderer is not part of the numerical solver boundary.
 
 Future work includes screen-space sizing, load-case filtering, prescribed-displacement symbols, labels, adjustable glyph density and higher-quality arrowheads.
+

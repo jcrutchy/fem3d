@@ -166,3 +166,4 @@ var D:TAnalysisManagerForm;
 begin D:=TAnalysisManagerForm.CreateManager(nil,M); try Result:=D.ShowModal=mrOK; SelectedID:=D.SelectedID; finally D.Free end; end;
 
 end.
+

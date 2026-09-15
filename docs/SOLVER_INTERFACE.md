@@ -1,4 +1,4 @@
-# FEM3D Solver Interface — v0.7
+# FEM3D Solver Interface â€” v0.7
 
 ## Purpose
 FEM3D separates modelling from numerical solution. The GUI prepares a complete ASCII input deck and launches an independent solver process. The solver has no dependency on the GUI.
@@ -25,7 +25,7 @@ The input is the native FEM3D ASCII model file. Analysis cases are persisted in 
 
 ```text
 [ANALYSIS_CASE 1]
-Name=Linear Static — LC1
+Name=Linear Static â€” LC1
 Type=LinearStatic
 LoadCase=1
 [SETTINGS]
@@ -60,9 +60,9 @@ Solver-specific GUI code may later be supplied as a DLL/plugin. It should create
 
 The initial solver family is deliberately limited to the three commonly used structural analyses:
 
-- Linear Static — active reference implementation.
-- Linear Buckling — analysis definition and external-process boundary established; numerical formulation gated pending geometric-stiffness verification.
-- Nonlinear Static — analysis definition, load-step controls and external-process boundary established; numerical formulation gated pending nonlinear element/tangent verification.
+- Linear Static â€” active reference implementation.
+- Linear Buckling â€” analysis definition and external-process boundary established; numerical formulation gated pending geometric-stiffness verification.
+- Nonlinear Static â€” analysis definition, load-step controls and external-process boundary established; numerical formulation gated pending nonlinear element/tangent verification.
 
 The modelling application does not contain these numerical solver implementations as its primary execution path. It prepares an ASCII FEM3D input deck and launches the corresponding solver executable.
 
@@ -83,3 +83,4 @@ Buckling and nonlinear static use the same process boundary and file convention,
 ### UI plugin boundary
 
 Solver-specific GUI configuration is intended to become an optional Windows x64 DLL/plugin layer. The DLL owns presentation and settings validation; the numerical solver remains an independent EXE. The model file remains the authoritative persisted analysis definition.
+

@@ -22,3 +22,4 @@ for I:=0 to High(M.Loads) do begin S+=Format('|L%d|%d|%d',[M.Loads[I].ID,M.Loads
 function ModelFingerprint(const M:TFEMModel):string; begin Result:=IntToHex(FNV1a64(CanonicalModel(M)),16); end;
 function AnalysisFingerprint(const A:TAnalysisCase):string; var L:TStringList; S:string; begin L:=TStringList.Create; try A.WriteTo(L); S:='FEM3D-ANALYSIS-FINGERPRINT-1|'+L.Text; Result:=IntToHex(FNV1a64(S),16); finally L.Free end; end;
 end.
+

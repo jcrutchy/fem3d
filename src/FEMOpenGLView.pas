@@ -5,7 +5,7 @@ interface
 
 uses
   Classes, SysUtils, Math, Controls, OpenGLContext, GL,
-  FEMTypes, FEMModel, FEMView, FEMSelection, FEMResultFields, FEMDisplayManager;
+  FEMTypes, FEMModel, FEMView, FEMSelection, FEMResultFields, FEMDisplayManager, FEMSectioning;
 
 type
   TClipAxis = (caX, caY, caZ);
@@ -25,11 +25,16 @@ type
     FShowGrid: Boolean;
     FShowNodes: Boolean;
     FShowElementEdges: Boolean;
+    FShowSolidMembers: Boolean;
     FShowClipPlane: Boolean;
     FShowLoads: Boolean;
     FShowRestraints: Boolean;
     FShowLocalAxes: Boolean;
     FShowCoordinateSystems: Boolean;
+    FEditPreviewActive: Boolean; FEditPreviewNodeID: Integer; FEditPreviewPoint: TVec3;
+    FEditPreviewBeamActive: Boolean; FEditPreviewBeamStart,FEditPreviewBeamEnd: TVec3;
+    FSelectionBoxActive:Boolean; FSelectionBoxX1,FSelectionBoxY1,FSelectionBoxX2,FSelectionBoxY2:Integer;
+    FClipState: TClipState;
     function NodePosition(NodeIndex: Integer): TVec3;
     function FieldValue(Field: TResultField; EntityID: Integer): Double;
     function ContourT(V: Double): Double;
@@ -41,29 +46,39 @@ type
     procedure SetupProjection(W,H: Integer);
     procedure SetupCamera;
     procedure ApplyClipPlane;
+    procedure SetPrimaryClipPlane;
     function GlyphScale: Double;
     procedure DrawArrow(const Origin,Direction: TVec3; Length,HeadSize: Double);
     procedure DrawLoads;
     procedure DrawRestraints;
     procedure DrawLocalAxes;
     procedure DrawCoordinateSystems;
+    procedure DrawSelectionBox;
+    procedure DrawBeamBody(const P1,P2: TVec3; Radius: Double; Selected,Hover: Boolean);
+    function BeamDisplayRadius(const E: TElementRecord; const P1,P2: TVec3): Double;
   public
     constructor Create(AControl: TOpenGLControl; AModel: TFEMModel; AView: TFEMViewport);
+    destructor Destroy; override;
     procedure SetDisplayManager(ADisplay:TDisplayManager);
     procedure Paint;
     procedure SetResultFields(AFields: TResultFieldCollection);
     procedure SetClipEnabled(Value: Boolean);
     procedure SetClipAxis(Axis: TClipAxis);
     procedure SetClipFraction(Value: Double);
+    procedure SetClipReverse(Value: Boolean);
     procedure SetShowAxes(Value: Boolean);
     procedure SetShowGrid(Value: Boolean);
     procedure SetShowNodes(Value: Boolean);
     procedure SetShowElementEdges(Value: Boolean);
+    procedure SetShowSolidMembers(Value: Boolean);
     procedure SetShowClipPlane(Value: Boolean);
     procedure SetShowLoads(Value: Boolean);
     procedure SetShowRestraints(Value: Boolean);
     procedure SetShowLocalAxes(Value: Boolean);
     procedure SetShowCoordinateSystems(Value: Boolean);
+    procedure SetEditPreviewNode(Active:Boolean; NodeID:Integer; const P:TVec3);
+    procedure SetEditPreviewBeam(Active:Boolean; const P1,P2:TVec3);
+    procedure SetSelectionBox(AActive: Boolean; X1,Y1,X2,Y2: Integer);
     property ClipEnabled: Boolean read FClipEnabled;
     property ClipAxis: TClipAxis read FClipAxis;
     property ClipFraction: Double read FClipFraction;
@@ -76,8 +91,18 @@ begin
   inherited Create;
   FControl:=AControl; FModel:=AModel; FView:=AView; FFields:=nil; FDisplay:=nil;
   FClipEnabled:=False; FClipAxis:=caX; FClipFraction:=0.5;
-  FShowAxes:=True; FShowGrid:=True; FShowNodes:=True; FShowElementEdges:=True; FShowClipPlane:=True;
+  FShowAxes:=True; FShowGrid:=True; FShowNodes:=True; FShowElementEdges:=True; FShowSolidMembers:=True; FShowClipPlane:=True;
   FShowLoads:=True; FShowRestraints:=True; FShowLocalAxes:=False; FShowCoordinateSystems:=True;
+  FEditPreviewActive:=False; FEditPreviewNodeID:=0; FEditPreviewPoint:=Vec3(0,0,0);
+  FEditPreviewBeamActive:=False; FEditPreviewBeamStart:=Vec3(0,0,0); FEditPreviewBeamEnd:=Vec3(0,0,0);
+  FSelectionBoxActive:=False; FSelectionBoxX1:=0; FSelectionBoxY1:=0; FSelectionBoxX2:=0; FSelectionBoxY2:=0;
+  FClipState:=TClipState.Create;
+end;
+
+destructor TOpenGLFEMRenderer.Destroy;
+begin
+  FClipState.Free;
+  inherited Destroy;
 end;
 
 function TOpenGLFEMRenderer.NodePosition(NodeIndex: Integer): TVec3;
@@ -148,18 +173,31 @@ begin
   glTranslated(-FView.Camera.Target.X,-FView.Camera.Target.Y,-FView.Camera.Target.Z);
 end;
 
-procedure TOpenGLFEMRenderer.ApplyClipPlane;
-var Eq: array[0..3] of GLdouble; C: Double;
-    MinP,MaxP: TVec3;
+procedure TOpenGLFEMRenderer.SetPrimaryClipPlane;
+var P:TClipPlane; MinP,MaxP:TVec3; C:Double;
 begin
-  if not FClipEnabled then Exit;
+  P:=FClipState.Plane(0); P.Enabled:=FClipEnabled; P.ShowPlane:=FShowClipPlane;
   GetBounds(MinP,MaxP);
   case FClipAxis of
-    caX: begin C:=MinP.X+(MaxP.X-MinP.X)*FClipFraction; Eq[0]:=1;Eq[1]:=0;Eq[2]:=0;Eq[3]:=-C; end;
-    caY: begin C:=MinP.Y+(MaxP.Y-MinP.Y)*FClipFraction; Eq[0]:=0;Eq[1]:=1;Eq[2]:=0;Eq[3]:=-C; end;
-    else begin C:=MinP.Z+(MaxP.Z-MinP.Z)*FClipFraction; Eq[0]:=0;Eq[1]:=0;Eq[2]:=1;Eq[3]:=-C; end;
+    caX: begin P.NormalX:=1; P.NormalY:=0; P.NormalZ:=0; C:=MinP.X+(MaxP.X-MinP.X)*FClipFraction; end;
+    caY: begin P.NormalX:=0; P.NormalY:=1; P.NormalZ:=0; C:=MinP.Y+(MaxP.Y-MinP.Y)*FClipFraction; end;
+    else begin P.NormalX:=0; P.NormalY:=0; P.NormalZ:=1; C:=MinP.Z+(MaxP.Z-MinP.Z)*FClipFraction; end;
   end;
-  glClipPlane(GL_CLIP_PLANE0,@Eq); glEnable(GL_CLIP_PLANE0);
+  P.Offset:=C; FClipState.SetPlane(0,P);
+end;
+
+procedure TOpenGLFEMRenderer.ApplyClipPlane;
+var I:Integer; P:TClipPlane; Eq:array[0..3] of GLdouble;
+begin
+  SetPrimaryClipPlane;
+  for I:=0 to 3 do begin
+    P:=FClipState.Plane(I); glDisable(GL_CLIP_PLANE0+I);
+    if P.Enabled then begin
+      Eq[0]:=P.NormalX; Eq[1]:=P.NormalY; Eq[2]:=P.NormalZ; Eq[3]:=-P.Offset;
+      if P.Reverse then begin Eq[0]:=-Eq[0]; Eq[1]:=-Eq[1]; Eq[2]:=-Eq[2]; Eq[3]:=-Eq[3]; end;
+      glClipPlane(GL_CLIP_PLANE0+I,@Eq); glEnable(GL_CLIP_PLANE0+I);
+    end;
+  end;
 end;
 
 procedure TOpenGLFEMRenderer.DrawGrid;
@@ -187,15 +225,16 @@ begin
 end;
 
 procedure TOpenGLFEMRenderer.DrawClipPlane;
-var MinP,MaxP: TVec3; C: Double;
+var MinP,MaxP:TVec3; C:Double; P:TClipPlane;
 begin
-  if (not FClipEnabled) or (not FShowClipPlane) then Exit;
-  GetBounds(MinP,MaxP);
+  P:=FClipState.Plane(0); if (not P.Enabled) or (not P.ShowPlane) then Exit;
+  GetBounds(MinP,MaxP); C:=P.Offset; glDisable(GL_LIGHTING); glDepthMask(GL_FALSE);
+  glBegin(GL_QUADS); glColor4f(0.2,0.65,1,0.10);
   case FClipAxis of
-    caX: begin C:=MinP.X+(MaxP.X-MinP.X)*FClipFraction; glBegin(GL_QUADS); glColor4f(0.2,0.65,1,0.10); glVertex3d(C,MinP.Y,MinP.Z); glVertex3d(C,MaxP.Y,MinP.Z); glVertex3d(C,MaxP.Y,MaxP.Z); glVertex3d(C,MinP.Y,MaxP.Z); glEnd; end;
-    caY: begin C:=MinP.Y+(MaxP.Y-MinP.Y)*FClipFraction; glBegin(GL_QUADS); glColor4f(0.2,0.65,1,0.10); glVertex3d(MinP.X,C,MinP.Z); glVertex3d(MaxP.X,C,MinP.Z); glVertex3d(MaxP.X,C,MaxP.Z); glVertex3d(MinP.X,C,MaxP.Z); glEnd; end;
-    else begin C:=MinP.Z+(MaxP.Z-MinP.Z)*FClipFraction; glBegin(GL_QUADS); glColor4f(0.2,0.65,1,0.10); glVertex3d(MinP.X,MinP.Y,C); glVertex3d(MaxP.X,MinP.Y,C); glVertex3d(MaxP.X,MaxP.Y,C); glVertex3d(MinP.X,MaxP.Y,C); glEnd; end;
-  end;
+    caX: begin glVertex3d(C,MinP.Y,MinP.Z); glVertex3d(C,MaxP.Y,MinP.Z); glVertex3d(C,MaxP.Y,MaxP.Z); glVertex3d(C,MinP.Y,MaxP.Z); end;
+    caY: begin glVertex3d(MinP.X,C,MinP.Z); glVertex3d(MaxP.X,C,MinP.Z); glVertex3d(MaxP.X,C,MaxP.Z); glVertex3d(MinP.X,C,MaxP.Z); end;
+    else begin glVertex3d(MinP.X,MinP.Y,C); glVertex3d(MaxP.X,MinP.Y,C); glVertex3d(MaxP.X,MaxP.Y,C); glVertex3d(MinP.X,MaxP.Y,C); end;
+  end; glEnd; glDepthMask(GL_TRUE);
 end;
 
 
@@ -283,6 +322,86 @@ begin
   end;
 end;
 
+
+function TOpenGLFEMRenderer.BeamDisplayRadius(const E: TElementRecord; const P1,P2: TVec3): Double;
+var SI: Integer; L,A,R,MinR,MaxR: Double;
+begin
+  L:=VNorm(VSub(P2,P1));
+  if L<1e-12 then Exit(0);
+  A:=0;
+  SI:=FModel.FindSection(E.SectionID);
+  if SI>=0 then A:=Abs(FModel.Sections[SI].Area);
+  if A>1e-18 then R:=Sqrt(A/Pi) else R:=L*0.006;
+  { The renderer intentionally uses an area-equivalent display radius. It is
+    presentation geometry only; it is not a claim about the real section shape. }
+  MinR:=L*0.003;
+  MaxR:=L*0.05;
+  Result:=Max(MinR,Min(MaxR,R));
+end;
+
+procedure TOpenGLFEMRenderer.DrawBeamBody(const P1,P2: TVec3; Radius: Double; Selected,Hover: Boolean);
+const Segments=8;
+var D,U,V,Q1,Q2: TVec3; I: Integer; A1,A2,C,S: Double;
+begin
+  D:=VUnit(VSub(P2,P1));
+  if VNorm(D)<1e-12 then Exit;
+  if Abs(D.Z)<0.9 then U:=VUnit(Vec3(-D.Y,D.X,0)) else U:=VUnit(Vec3(1,0,0));
+  V:=VUnit(VCross(D,U));
+  glDisable(GL_LIGHTING);
+  glBegin(GL_QUADS);
+  for I:=0 to Segments-1 do begin
+    A1:=2*Pi*I/Segments; A2:=2*Pi*(I+1)/Segments;
+    C:=Cos(A1); S:=Sin(A1);
+    Q1:=Vec3(P1.X+Radius*(U.X*C+V.X*S),P1.Y+Radius*(U.Y*C+V.Y*S),P1.Z+Radius*(U.Z*C+V.Z*S));
+    C:=Cos(A2); S:=Sin(A2);
+    Q2:=Vec3(P1.X+Radius*(U.X*C+V.X*S),P1.Y+Radius*(U.Y*C+V.Y*S),P1.Z+Radius*(U.Z*C+V.Z*S));
+    glVertex3d(Q1.X,Q1.Y,Q1.Z); glVertex3d(Q2.X,Q2.Y,Q2.Z);
+    C:=Cos(A2); S:=Sin(A2);
+    Q2:=Vec3(P2.X+Radius*(U.X*C+V.X*S),P2.Y+Radius*(U.Y*C+V.Y*S),P2.Z+Radius*(U.Z*C+V.Z*S));
+    glVertex3d(Q2.X,Q2.Y,Q2.Z);
+    C:=Cos(A1); S:=Sin(A1);
+    Q1:=Vec3(P2.X+Radius*(U.X*C+V.X*S),P2.Y+Radius*(U.Y*C+V.Y*S),P2.Z+Radius*(U.Z*C+V.Z*S));
+    glVertex3d(Q1.X,Q1.Y,Q1.Z);
+  end;
+  glEnd;
+
+  { End caps make the member read as a real 3D body when viewed obliquely. }
+  glBegin(GL_TRIANGLE_FAN);
+  glVertex3d(P1.X,P1.Y,P1.Z);
+  for I:=0 to Segments do begin
+    A1:=2*Pi*(I mod Segments)/Segments; C:=Cos(A1); S:=Sin(A1);
+    Q1:=Vec3(P1.X+Radius*(U.X*C+V.X*S),P1.Y+Radius*(U.Y*C+V.Y*S),P1.Z+Radius*(U.Z*C+V.Z*S));
+    glVertex3d(Q1.X,Q1.Y,Q1.Z);
+  end;
+  glEnd;
+  glBegin(GL_TRIANGLE_FAN);
+  glVertex3d(P2.X,P2.Y,P2.Z);
+  for I:=Segments downto 0 do begin
+    A1:=2*Pi*(I mod Segments)/Segments; C:=Cos(A1); S:=Sin(A1);
+    Q1:=Vec3(P2.X+Radius*(U.X*C+V.X*S),P2.Y+Radius*(U.Y*C+V.Y*S),P2.Z+Radius*(U.Z*C+V.Z*S));
+    glVertex3d(Q1.X,Q1.Y,Q1.Z);
+  end;
+  glEnd;
+
+  if FShowElementEdges or Selected or Hover then begin
+    if Selected then begin glLineWidth(4); glColor3f(1,0.2,0.2); end
+    else if Hover then begin glLineWidth(3); glColor3f(1,0.85,0.2); end
+    else begin glLineWidth(1); glColor4f(0.08,0.10,0.13,0.85); end;
+    glBegin(GL_LINES);
+    for I:=0 to Segments-1 do begin
+      A1:=2*Pi*I/Segments; C:=Cos(A1); S:=Sin(A1);
+      Q1:=Vec3(P1.X+Radius*(U.X*C+V.X*S),P1.Y+Radius*(U.Y*C+V.Y*S),P1.Z+Radius*(U.Z*C+V.Z*S));
+      Q2:=Vec3(P2.X+Radius*(U.X*C+V.X*S),P2.Y+Radius*(U.Y*C+V.Y*S),P2.Z+Radius*(U.Z*C+V.Z*S));
+      glVertex3d(Q1.X,Q1.Y,Q1.Z); glVertex3d(Q2.X,Q2.Y,Q2.Z);
+    end;
+    glEnd;
+  end;
+  if Selected then begin
+    glColor3f(1,0.2,0.2); glLineWidth(2);
+    glBegin(GL_LINES); glVertex3d(P1.X,P1.Y,P1.Z); glVertex3d(P2.X,P2.Y,P2.Z); glEnd;
+  end;
+end;
+
 procedure TOpenGLFEMRenderer.Paint;
 var I,A,B: Integer; P1,P2: TVec3; V,V1,V2: Double; F:TResultField; Col: TSelectionSet;
 begin
@@ -300,8 +419,13 @@ begin
       if F.Location=rlElement then V:=FieldValue(F,FModel.Elements[I].ID) else begin V1:=FieldValue(F,FModel.Nodes[A].ID); V2:=FieldValue(F,FModel.Nodes[B].ID); V:=(V1+V2)*0.5; end;
       SetMaterialColor(ContourT(V));
     end else glColor3f(0.72,0.76,0.84);
-    if FView.Selection.ElementSelected(FModel.Elements[I].ID) then glLineWidth(5) else glLineWidth(2);
-    P1:=NodePosition(A); P2:=NodePosition(B); glBegin(GL_LINES); glVertex3d(P1.X,P1.Y,P1.Z); glVertex3d(P2.X,P2.Y,P2.Z); glEnd;
+    P1:=NodePosition(A); P2:=NodePosition(B);
+    if FShowSolidMembers and SameText(FModel.Elements[I].Kind,'BEAM3D') then
+      DrawBeamBody(P1,P2,BeamDisplayRadius(FModel.Elements[I],P1,P2),FView.Selection.ElementSelected(FModel.Elements[I].ID),FView.HoverElementID=FModel.Elements[I].ID)
+    else begin
+      if FView.Selection.ElementSelected(FModel.Elements[I].ID) then begin glLineWidth(5); glColor3f(1,0.2,0.2); end else if FView.HoverElementID=FModel.Elements[I].ID then begin glLineWidth(4); glColor3f(1,0.85,0.2); end else glLineWidth(2);
+      glBegin(GL_LINES); glVertex3d(P1.X,P1.Y,P1.Z); glVertex3d(P2.X,P2.Y,P2.Z); glEnd;
+    end;
   end;
   glDisable(GL_CLIP_PLANE0);
   if FView.ShowUndeformed then begin
@@ -314,7 +438,39 @@ begin
   if FShowLocalAxes then DrawLocalAxes;
   if FShowLoads then DrawLoads;
   if FShowRestraints then DrawRestraints;
-  if FShowNodes then begin glPointSize(6); glBegin(GL_POINTS); for I:=0 to High(FModel.Nodes) do begin if (FDisplay=nil) or FDisplay.IsNodeVisible(FModel,FModel.Nodes[I].ID) then begin if FView.Selection.NodeSelected(FModel.Nodes[I].ID) then glColor3f(1,0.2,0.2) else glColor3f(0.95,0.95,0.95); P1:=NodePosition(I); glVertex3d(P1.X,P1.Y,P1.Z); end; end; glEnd; end;
+  if FShowNodes then begin glPointSize(6); glBegin(GL_POINTS); for I:=0 to High(FModel.Nodes) do begin if (FDisplay=nil) or FDisplay.IsNodeVisible(FModel,FModel.Nodes[I].ID) then begin if FView.Selection.NodeSelected(FModel.Nodes[I].ID) then glColor3f(1,0.2,0.2) else if FView.HoverNodeID=FModel.Nodes[I].ID then begin glColor3f(1,0.85,0.2); glPointSize(10); end else begin glColor3f(0.95,0.95,0.95); glPointSize(6); end; P1:=NodePosition(I); glVertex3d(P1.X,P1.Y,P1.Z); end; end; glEnd; end;
+  if FEditPreviewBeamActive then begin
+    { Beam creation preview is graphical only; no model state is changed. }
+    glDisable(GL_DEPTH_TEST); glLineWidth(5); glColor3f(0.35,0.95,1.0);
+    glBegin(GL_LINES);
+    glVertex3d(FEditPreviewBeamStart.X,FEditPreviewBeamStart.Y,FEditPreviewBeamStart.Z);
+    glVertex3d(FEditPreviewBeamEnd.X,FEditPreviewBeamEnd.Y,FEditPreviewBeamEnd.Z);
+    glEnd;
+    glPointSize(12); glColor3f(0.35,0.95,1.0);
+    glBegin(GL_POINTS);
+    glVertex3d(FEditPreviewBeamEnd.X,FEditPreviewBeamEnd.Y,FEditPreviewBeamEnd.Z);
+    glEnd;
+    glEnable(GL_DEPTH_TEST);
+  end;
+  DrawSelectionBox;
+  if FEditPreviewActive then begin
+    { Drag preview is deliberately graphical only: the model is not modified until mouse release. }
+    glDisable(GL_DEPTH_TEST); glLineWidth(4); glColor3f(1,0.85,0.2);
+    glBegin(GL_LINES);
+    for I:=0 to High(FModel.Elements) do if Length(FModel.Elements[I].NodeIDs)>=2 then begin
+      if (FModel.Elements[I].NodeIDs[0]=FEditPreviewNodeID) or (FModel.Elements[I].NodeIDs[1]=FEditPreviewNodeID) then begin
+        A:=FModel.FindNode(FModel.Elements[I].NodeIDs[0]); B:=FModel.FindNode(FModel.Elements[I].NodeIDs[1]);
+        if (A>=0) and (B>=0) then begin
+          if FModel.Elements[I].NodeIDs[0]=FEditPreviewNodeID then P1:=FEditPreviewPoint else P1:=NodePosition(A);
+          if FModel.Elements[I].NodeIDs[1]=FEditPreviewNodeID then P2:=FEditPreviewPoint else P2:=NodePosition(B);
+          glVertex3d(P1.X,P1.Y,P1.Z); glVertex3d(P2.X,P2.Y,P2.Z);
+        end;
+      end;
+    end;
+    glEnd;
+    glPointSize(13); glColor3f(1,0.85,0.2); glBegin(GL_POINTS); glVertex3d(FEditPreviewPoint.X,FEditPreviewPoint.Y,FEditPreviewPoint.Z); glEnd;
+    glEnable(GL_DEPTH_TEST);
+  end;
   FControl.SwapBuffers;
 end;
 
@@ -323,14 +479,41 @@ procedure TOpenGLFEMRenderer.SetDisplayManager(ADisplay:TDisplayManager); begin 
 procedure TOpenGLFEMRenderer.SetClipEnabled(Value:Boolean); begin FClipEnabled:=Value; end;
 procedure TOpenGLFEMRenderer.SetClipAxis(Axis:TClipAxis); begin FClipAxis:=Axis; end;
 procedure TOpenGLFEMRenderer.SetClipFraction(Value:Double); begin FClipFraction:=Max(0,Min(1,Value)); end;
+procedure TOpenGLFEMRenderer.SetClipReverse(Value:Boolean); var P:TClipPlane; begin P:=FClipState.Plane(0); P.Reverse:=Value; FClipState.SetPlane(0,P); end;
 procedure TOpenGLFEMRenderer.SetShowAxes(Value:Boolean); begin FShowAxes:=Value; end;
 procedure TOpenGLFEMRenderer.SetShowGrid(Value:Boolean); begin FShowGrid:=Value; end;
 procedure TOpenGLFEMRenderer.SetShowNodes(Value:Boolean); begin FShowNodes:=Value; end;
 procedure TOpenGLFEMRenderer.SetShowElementEdges(Value:Boolean); begin FShowElementEdges:=Value; end;
+procedure TOpenGLFEMRenderer.SetShowSolidMembers(Value:Boolean); begin FShowSolidMembers:=Value; end;
 procedure TOpenGLFEMRenderer.SetShowClipPlane(Value:Boolean); begin FShowClipPlane:=Value; end;
 procedure TOpenGLFEMRenderer.SetShowLoads(Value:Boolean); begin FShowLoads:=Value; end;
 procedure TOpenGLFEMRenderer.SetShowRestraints(Value:Boolean); begin FShowRestraints:=Value; end;
 procedure TOpenGLFEMRenderer.SetShowLocalAxes(Value:Boolean); begin FShowLocalAxes:=Value; end;
 procedure TOpenGLFEMRenderer.SetShowCoordinateSystems(Value:Boolean); begin FShowCoordinateSystems:=Value; end;
+procedure TOpenGLFEMRenderer.SetEditPreviewNode(Active:Boolean; NodeID:Integer; const P:TVec3); begin FEditPreviewActive:=Active; FEditPreviewNodeID:=NodeID; FEditPreviewPoint:=P; end;
+procedure TOpenGLFEMRenderer.SetEditPreviewBeam(Active:Boolean; const P1,P2:TVec3); begin FEditPreviewBeamActive:=Active; FEditPreviewBeamStart:=P1; FEditPreviewBeamEnd:=P2; end;
+
+
+
+
+procedure TOpenGLFEMRenderer.DrawSelectionBox;
+var L,R,T,B:Integer; W,H:Integer;
+begin
+  if not FSelectionBoxActive then Exit;
+  W:=FControl.Width; H:=FControl.Height; if (W<=0) or (H<=0) then Exit;
+  L:=Min(FSelectionBoxX1,FSelectionBoxX2); R:=Max(FSelectionBoxX1,FSelectionBoxX2);
+  T:=Min(FSelectionBoxY1,FSelectionBoxY2); B:=Max(FSelectionBoxY1,FSelectionBoxY2);
+  glDisable(GL_DEPTH_TEST); glDisable(GL_CLIP_PLANE0); glDisable(GL_LIGHTING);
+  glMatrixMode(GL_PROJECTION); glPushMatrix; glLoadIdentity; glOrtho(0,W,H,0,-1,1);
+  glMatrixMode(GL_MODELVIEW); glPushMatrix; glLoadIdentity;
+  glLineWidth(2); glColor4f(0.35,0.85,1.0,0.9);
+  glBegin(GL_LINE_LOOP); glVertex2i(L,T); glVertex2i(R,T); glVertex2i(R,B); glVertex2i(L,B); glEnd;
+  glMatrixMode(GL_MODELVIEW); glPopMatrix; glMatrixMode(GL_PROJECTION); glPopMatrix;
+  glMatrixMode(GL_MODELVIEW); glEnable(GL_DEPTH_TEST);
+end;
+
+procedure TOpenGLFEMRenderer.SetSelectionBox(AActive: Boolean; X1, Y1, X2,
+  Y2: Integer);
+begin FSelectionBoxActive:=AActive; FSelectionBoxX1:=X1; FSelectionBoxY1:=Y1; FSelectionBoxX2:=X2; FSelectionBoxY2:=Y2; end;
 
 end.

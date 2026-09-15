@@ -74,3 +74,4 @@ function TSelectionSet.NodeID(I:Integer):Integer;begin Result:=FNodes[I];end;
 function TSelectionSet.ElementID(I:Integer):Integer;begin Result:=FElements[I];end;
 
 end.
+

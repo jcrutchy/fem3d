@@ -13,3 +13,4 @@ Current GUI operations:
 - Show All
 
 The current implementation intentionally favours simple, auditable state transitions over a more complicated rule engine. Composable predicates, saved display states, selection-driven isolation and colour modes remain subsequent increments.
+

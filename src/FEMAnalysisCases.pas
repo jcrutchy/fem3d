@@ -313,3 +313,4 @@ function TAnalysisCaseCollection.Item(Index:Integer):TAnalysisCase; begin Result
 function TAnalysisCaseCollection.NextID:Integer; begin Result:=FNextID; end;
 
 end.
+

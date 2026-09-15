@@ -3,7 +3,7 @@ unit FEMVerification;
 
 interface
 
-uses Classes, SysUtils, Math, FEMTypes, FEMModel, FEMElements, FEMMatrix, FEMAnalysis, FEMValidation, FEMAnalysisCases, FEMIO, FEMHash, FEMResults, FEMResultFields, FEMDisplayManager;
+uses Classes, SysUtils, Math, FEMTypes, FEMModel, FEMElements, FEMMatrix, FEMAnalysis, FEMValidation, FEMAnalysisCases, FEMIO, FEMHash, FEMResults, FEMResultFields, FEMDisplayManager, FEMModelEditor;
 
 type
   TVerificationResult = record
@@ -34,6 +34,7 @@ type
     class function FingerprintSensitivity(out V:TVerificationResult):Boolean;
     class function ResultExpression(out V:TVerificationResult):Boolean;
     class function DisplayManagerVisibility(out V:TVerificationResult):Boolean;
+    class function ModelEditing(out V:TVerificationResult):Boolean;
   end;
 
 implementation
@@ -72,6 +73,37 @@ begin
   finally D.Free; M.Free; end;
 end;
 
+class function TFEMVerification.ModelEditing(out V:TVerificationResult):Boolean;
+var M:TFEMModel; E:TModelEditor; Mat,Sec,G,N1,N2,Elem,NN,NE,CN,CE:Integer; I:Integer; P:TVec3;
+begin
+  Result:=False; M:=TFEMModel.Create; E:=TModelEditor.Create(M);
+  try
+    Mat:=M.AddMaterial('Steel',200e9,0.3,7850); Sec:=M.AddSection('Section',0.01,8e-6,3e-6,1e-6); G:=M.AddGroup('Test');
+    N1:=E.CreateNode(Vec3(0,0,0)); N2:=E.CreateNode(Vec3(10,0,0)); Elem:=E.CreateElement('BEAM3D',N1,N2,Mat,Sec,G);
+    if (Elem<0) or (Length(M.Elements)<>1) then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Node/beam creation failed.'; Exit(False); end;
+    if not E.SplitElement(Elem,NN,NE) then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Beam split failed.'; Exit(False); end;
+    if (Length(M.Nodes)<>3) or (Length(M.Elements)<>2) then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Split topology count incorrect.'; Exit(False); end;
+    I:=M.FindNode(NN); P:=M.Nodes[I].Position;
+    if (Abs(P.X-5)>1e-12) or (Abs(P.Y)>1e-12) or (Abs(P.Z)>1e-12) then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Split midpoint is incorrect.'; Exit(False); end;
+    if (M.Elements[0].MaterialID<>Mat) or (M.Elements[0].SectionID<>Sec) or (M.Elements[0].GroupID<>G) or
+       (M.Elements[1].MaterialID<>Mat) or (M.Elements[1].SectionID<>Sec) or (M.Elements[1].GroupID<>G) then begin
+      V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Split did not preserve beam attributes.'; Exit(False);
+    end;
+    if not E.Undo or (Length(M.Nodes)<>2) or (Length(M.Elements)<>1) then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Undo did not restore pre-split topology.'; Exit(False); end;
+    if not E.Redo or (Length(M.Nodes)<>3) or (Length(M.Elements)<>2) then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Redo did not restore split topology.'; Exit(False); end;
+    if not E.MoveNode(NN,Vec3(5,1,0)) then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Node move failed.'; Exit(False); end;
+    if not E.Undo then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Undo of node move failed.'; Exit(False); end;
+    if not E.SubdivideElement(Elem,4,CN,CE) then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Beam subdivision failed.'; Exit(False); end;
+    if (CN<>3) or (CE<>4) or (Length(M.Nodes)<>6) or (Length(M.Elements)<>5) then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Subdivision topology count incorrect.'; Exit(False); end;
+    if (M.Elements[0].MaterialID<>Mat) or (M.Elements[Length(M.Elements)-1].SectionID<>Sec) or
+       (M.Elements[Length(M.Elements)-1].GroupID<>G) then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Subdivision did not preserve beam attributes.'; Exit(False); end;
+    if not E.Undo or (Length(M.Nodes)<>3) or (Length(M.Elements)<>2) then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Undo did not restore pre-subdivision topology.'; Exit(False); end;
+    if not E.Redo or (Length(M.Nodes)<>6) or (Length(M.Elements)<>5) then begin V.Name:='Model editing foundation'; V.Passed:=False; V.MessageText:='Redo did not restore subdivision topology.'; Exit(False); end;
+    V.Name:='Model editing foundation'; V.Expected:=1; V.Actual:=1; V.Tolerance:=0; V.RelativeError:=0; V.Passed:=True;
+    V.MessageText:='Node/beam creation, attribute-preserving split/subdivision, and snapshot undo/redo verified.'; Result:=True;
+  finally E.Free; M.Free end;
+end;
+
 class function TFEMVerification.RunScalar(const Name:string; Expected,Actual,Tol:Double; out V:TVerificationResult):Boolean;
 begin
   V.Name:=Name; V.Expected:=Expected; V.Actual:=Actual; V.Tolerance:=Tol; V.RelativeError:=Abs(Actual-Expected)/Max(Abs(Expected),1e-300);
@@ -102,9 +134,9 @@ begin
     FillChar(Load,SizeOf(Load),0); Load[2]:=-10000; M.AddNodalLoad(N2,LC,Load);
     Setup.LoadCaseID:=LC; Setup.SolverName:=S.Name; Setup.Options.PivotTolerance:=1e-12; Setup.Options.ComputeResidual:=True;
     X:=E.Solve(Setup); try
-      if not X.Success then begin V.Name:='3D beam cantilever — tip Z displacement'; V.MessageText:=X.MessageText; Exit; end;
+      if not X.Success then begin V.Name:='3D beam cantilever â€” tip Z displacement'; V.MessageText:=X.MessageText; Exit; end;
       L:=5;P:=10000;Expected:=-P*L*L*L/(3*200e9*8e-6);
-      V.Name:='3D beam cantilever — tip Z displacement'; Result:=RunScalar(V.Name,Expected,X.U[(M.FindNode(N2))*6+2],1e-8,V);
+      V.Name:='3D beam cantilever â€” tip Z displacement'; Result:=RunScalar(V.Name,Expected,X.U[(M.FindNode(N2))*6+2],1e-8,V);
       if X.ResidualNorm>1e-10 then begin V.Passed:=False; V.MessageText:=V.MessageText+Format('; residual %.6g',[X.ResidualNorm]); Result:=False; end;
     finally X.Free; end;
   finally E.Free;S.Free;R.Free;M.Free;end;
@@ -117,7 +149,7 @@ begin
     FillChar(Load,SizeOf(Load),0); Load[1]:=-10000; M.AddNodalLoad(N2,LC,Load);
     Setup.LoadCaseID:=LC; Setup.SolverName:=S.Name; Setup.Options.PivotTolerance:=1e-12; Setup.Options.ComputeResidual:=True; X:=E.Solve(Setup);
     try if not X.Success then begin V.Name:='Cantilever Y bending'; V.MessageText:=X.MessageText; Exit; end;
-      Expected:=-10000*Sqr(5)*5/(3*200e9*3e-6); Result:=RunScalar('3D beam cantilever — tip Y displacement',Expected,X.U[M.FindNode(N2)*6+1],1e-8,V);
+      Expected:=-10000*Sqr(5)*5/(3*200e9*3e-6); Result:=RunScalar('3D beam cantilever â€” tip Y displacement',Expected,X.U[M.FindNode(N2)*6+1],1e-8,V);
     finally X.Free; end;
   finally E.Free;S.Free;R.Free;M.Free;end;
 end;
@@ -129,7 +161,7 @@ begin
     FillChar(Load,SizeOf(Load),0); Load[0]:=10000; M.AddNodalLoad(N2,LC,Load);
     Setup.LoadCaseID:=LC; Setup.SolverName:=S.Name; Setup.Options.PivotTolerance:=1e-12; Setup.Options.ComputeResidual:=True; X:=E.Solve(Setup);
     try if not X.Success then begin V.Name:='Cantilever axial'; V.MessageText:=X.MessageText; Exit; end;
-      Expected:=10000*5/(200e9*0.01); Result:=RunScalar('3D beam cantilever — axial displacement',Expected,X.U[M.FindNode(N2)*6],1e-9,V);
+      Expected:=10000*5/(200e9*0.01); Result:=RunScalar('3D beam cantilever â€” axial displacement',Expected,X.U[M.FindNode(N2)*6],1e-9,V);
     finally X.Free; end;
   finally E.Free;S.Free;R.Free;M.Free;end;
 end;
@@ -142,7 +174,7 @@ begin
     Setup.LoadCaseID:=LC; Setup.SolverName:=S.Name; Setup.Options.PivotTolerance:=1e-12; Setup.Options.ComputeResidual:=True; X:=E.Solve(Setup);
     try if not X.Success then begin V.Name:='Cantilever torsion'; V.MessageText:=X.MessageText; Exit; end;
       G:=200e9/(2*(1+0.3)); J:=1e-6; L:=5; T:=10000; Expected:=T*L/(G*J);
-      Result:=RunScalar('3D beam cantilever — torsional rotation',Expected,X.U[M.FindNode(N2)*6+3],1e-8,V);
+      Result:=RunScalar('3D beam cantilever â€” torsional rotation',Expected,X.U[M.FindNode(N2)*6+3],1e-8,V);
     finally X.Free; end;
   finally E.Free;S.Free;R.Free;M.Free;end;
 end;
@@ -155,7 +187,7 @@ begin
     Setup.LoadCaseID:=LC; Setup.SolverName:=S.Name; Setup.Options.PivotTolerance:=1e-12; Setup.Options.ComputeResidual:=True; X:=E.Solve(Setup);
     try
       if not X.Success then begin V.Name:='Reaction equilibrium'; V.MessageText:=X.MessageText; Exit; end;
-      Eq:=X.Reactions[0*6+2]; Result:=RunScalar('Fixed support Z reaction — global equilibrium',10000,Eq,1e-10,V);
+      Eq:=X.Reactions[0*6+2]; Result:=RunScalar('Fixed support Z reaction â€” global equilibrium',10000,Eq,1e-10,V);
       if X.ResidualNorm>1e-10 then begin V.Passed:=False; V.MessageText:=V.MessageText+Format('; free-equation residual %.6g',[X.ResidualNorm]); Result:=False; end;
     finally X.Free; end;
   finally E.Free;S.Free;R.Free;M.Free;end;
@@ -286,3 +318,4 @@ begin
 end;
 
 end.
+

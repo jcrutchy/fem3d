@@ -39,6 +39,8 @@ type
     property PanX:Double read FPanX;
     property PanY:Double read FPanY;
     function Project(const P:TVec3; W,H:Integer):TPoint;
+    procedure ScreenRay(X,Y,W,H:Integer; out Origin,Direction:TVec3);
+    function ScreenPointOnPlane(X,Y,W,H:Integer; Plane:Integer; Offset:Double; out P:TVec3):Boolean;
   end;
 
   TFEMViewport = class
@@ -54,6 +56,7 @@ type
     FDeformationScale:Double;
     FShowDeformed:Boolean;
     FShowUndeformed:Boolean;
+    FHoverNodeID,FHoverElementID:Integer;
     FContourMin,FContourMax:Double;
     function DisplayPosition(NodeIndex:Integer):TVec3;
     function ValueAtNode(Field:TResultField; NodeIndex:Integer):Double;
@@ -71,6 +74,9 @@ type
     procedure MouseUp;
     procedure Wheel(Delta:Integer);
     procedure TogglePicked(X,Y,W,H:Integer; Additive:Boolean);
+    procedure SelectBox(X1,Y1,X2,Y2,W,H:Integer; Crossing,Additive:Boolean);
+    procedure UpdateHover(X,Y,W,H:Integer);
+    procedure ClearHover;
     procedure ClearSelection;
     procedure SelectMode(Mode:TSelectionMode);
     function SelectionMode:TSelectionMode;
@@ -95,6 +101,8 @@ type
     function PickElement(X,Y,W,H:Integer):Integer;
     property Camera:TViewCamera read FCamera;
     property Selection:TSelectionSet read FSelection;
+    property HoverNodeID:Integer read FHoverNodeID;
+    property HoverElementID:Integer read FHoverElementID;
   end;
 
 implementation
@@ -130,6 +138,60 @@ begin
   S:=X*CY+Z*SY; Z:=-X*SY+Z*CY; Y:=Y*CP-Z*SP;
   Scale:=Min(W,H)/(2*Max(FDistance,1e-9));
   Result.X:=Round(W/2+(S+FPanX)*Scale);Result.Y:=Round(H/2-(Y+FPanY)*Scale);
+end;
+
+procedure TViewCamera.ScreenRay(X,Y,W,H:Integer; out Origin,Direction:TVec3);
+var NX,NY,Aspect,HalfSize,TX,TY,TZ,CY,SY,CP,SP:Double;
+  procedure InverseRotate(const CX,CYv,CZ:Double; out WX,WY,WZ:Double);
+  var A,B,C:Double;
+  begin
+    { inverse pitch, then inverse yaw; camera rotations are applied pitch after yaw }
+    A:=CX;
+    B:=CYv*CP-CZ*SP;
+    C:=CYv*SP+CZ*CP;
+    WX:=A*CY-C*SY;
+    WY:=B;
+    WZ:=A*SY+C*CY;
+  end;
+begin
+  if W<1 then W:=1; if H<1 then H:=1;
+  Aspect:=W/H;
+  NX:=(2*X/W)-1;
+  NY:=1-(2*Y/H);
+  CY:=Cos(FYaw); SY:=Sin(FYaw); CP:=Cos(FPitch); SP:=Sin(FPitch);
+  if FProjection=vpPerspective then begin
+    TX:=NX*Tan(FFOV*Pi/360)*Aspect;
+    TY:=NY*Tan(FFOV*Pi/360);
+    TZ:=-1;
+    InverseRotate(TX,TY,TZ,Direction.X,Direction.Y,Direction.Z);
+    Direction:=VUnit(Direction);
+    InverseRotate(-FPanX,-FPanY,FDistance,TX,TY,TZ);
+    Origin:=Vec3(FTarget.X+TX,FTarget.Y+TY,FTarget.Z+TZ);
+  end else begin
+    HalfSize:=Max(FDistance*0.6,FNearClip*10);
+    TX:=NX*HalfSize*Aspect-FPanX;
+    TY:=NY*HalfSize-FPanY;
+    InverseRotate(TX,TY,FDistance,TX,TY,TZ);
+    Origin:=Vec3(FTarget.X+TX,FTarget.Y+TY,FTarget.Z+TZ);
+    InverseRotate(0,0,-1,Direction.X,Direction.Y,Direction.Z);
+    Direction:=VUnit(Direction);
+  end;
+end;
+
+function TViewCamera.ScreenPointOnPlane(X,Y,W,H:Integer; Plane:Integer; Offset:Double; out P:TVec3):Boolean;
+var O,D:TVec3; T:Double; Denom:Double;
+begin
+  Result:=False; P:=Vec3(0,0,0);
+  ScreenRay(X,Y,W,H,O,D);
+  case Plane of
+    0: begin Denom:=D.Z; if Abs(Denom)<1e-12 then Exit; T:=(Offset-O.Z)/Denom; end; // XY
+    1: begin Denom:=D.Y; if Abs(Denom)<1e-12 then Exit; T:=(Offset-O.Y)/Denom; end; // XZ
+    2: begin Denom:=D.X; if Abs(Denom)<1e-12 then Exit; T:=(Offset-O.X)/Denom; end; // YZ
+    else Exit;
+  end;
+  if T<0 then Exit;
+  P:=VAdd(O,VScale(D,T));
+  Result:=True;
 end;
 
 constructor TFEMViewport.Create(AModel:TFEMModel);
@@ -283,6 +345,61 @@ begin
   end;
 end;
 
+
+procedure TFEMViewport.SelectBox(X1,Y1,X2,Y2,W,H:Integer; Crossing,Additive:Boolean);
+var
+  I,A,B:Integer; P1,P2:TPoint; L,R,T,Btm:Integer; Hit:Boolean;
+  function Inside(const P:TPoint):Boolean;
+  begin Result:=(P.X>=L) and (P.X<=R) and (P.Y>=T) and (P.Y<=Btm); end;
+  function SegIntersectsRect(const Q1,Q2:TPoint):Boolean;
+  var dx,dy,t0,t1,t:Double;
+    function ClipTest(Pv,Qv:Double):Boolean;
+    begin
+      if Abs(Pv)<1e-12 then Exit(Qv>=0);
+      t:=Qv/Pv;
+      if Pv<0 then begin if t>t1 then Exit(False); if t>t0 then t0:=t; end
+      else begin if t<t0 then Exit(False); if t<t1 then t1:=t; end;
+      Result:=True;
+    end;
+  begin
+    Result:=False;
+    if Inside(Q1) or Inside(Q2) then Exit(True);
+    dx:=Q2.X-Q1.X; dy:=Q2.Y-Q1.Y; t0:=0; t1:=1;
+    if not ClipTest(-dx,Q1.X-L) then Exit;
+    if not ClipTest(dx,R-Q1.X) then Exit;
+    if not ClipTest(-dy,Q1.Y-T) then Exit;
+    if not ClipTest(dy,Btm-Q1.Y) then Exit;
+    Result:=t1>=t0;
+  end;
+begin
+  L:=Min(X1,X2); R:=Max(X1,X2); T:=Min(Y1,Y2); Btm:=Max(Y1,Y2);
+  if (R-L<3) or (Btm-T<3) then Exit;
+  if not Additive then FSelection.Clear;
+  if FSelectionMode=smNode then begin
+    for I:=0 to High(FModel.Nodes) do begin
+      P1:=FCamera.Project(DisplayPosition(I),W,H);
+      if Inside(P1) then FSelection.SelectNode(FModel.Nodes[I].ID,True);
+    end;
+  end else begin
+    for I:=0 to High(FModel.Elements) do begin
+      if Length(FModel.Elements[I].NodeIDs)<2 then Continue;
+      A:=FModel.FindNode(FModel.Elements[I].NodeIDs[0]); B:=FModel.FindNode(FModel.Elements[I].NodeIDs[1]);
+      if (A<0) or (B<0) then Continue;
+      P1:=FCamera.Project(DisplayPosition(A),W,H); P2:=FCamera.Project(DisplayPosition(B),W,H);
+      if Crossing then Hit:=SegIntersectsRect(P1,P2) else Hit:=Inside(P1) and Inside(P2);
+      if Hit then FSelection.SelectElement(FModel.Elements[I].ID,True);
+    end;
+  end;
+end;
+
+procedure TFEMViewport.UpdateHover(X,Y,W,H:Integer);
+begin
+  FHoverNodeID:=0; FHoverElementID:=0;
+  if FSelectionMode=smNode then FHoverNodeID:=PickNode(X,Y,W,H)
+  else FHoverElementID:=PickElement(X,Y,W,H);
+end;
+procedure TFEMViewport.ClearHover;
+begin FHoverNodeID:=0; FHoverElementID:=0; end;
 procedure TFEMViewport.ClearSelection; begin FSelection.Clear; end;
 procedure TFEMViewport.SelectMode(Mode:TSelectionMode); begin FSelectionMode:=Mode; end;
 function TFEMViewport.SelectionMode:TSelectionMode; begin Result:=FSelectionMode; end;
@@ -311,26 +428,39 @@ end;
 procedure TFEMViewport.SetContourRange(AMin,AMax:Double);begin if AMax>AMin then begin FContourMin:=AMin;FContourMax:=AMax;end else AutoContourRange;end;
 
 function TFEMViewport.PickNode(X,Y,W,H:Integer):Integer;
-var I:Integer;P:TPoint;D,Best:Double;
-begin Result:=0;Best:=9;
-  for I:=0 to High(FModel.Nodes) do begin P:=FCamera.Project(DisplayPosition(I),W,H);D:=Hypot(P.X-X,P.Y-Y);
-    if D<Best then begin Best:=D;Result:=FModel.Nodes[I].ID;end;
+var I:Integer; O,D,R:TVec3; P:TVec3; T,Dist,Best,PixelWorld:Double;
+begin
+  Result:=0; Best:=1e100;
+  FCamera.ScreenRay(X,Y,W,H,O,D);
+  PixelWorld:=Max(FCamera.NearClip*2,FCamera.Distance*2/Max(Min(W,H),1));
+  for I:=0 to High(FModel.Nodes) do begin
+    P:=DisplayPosition(I);
+    R:=VSub(P,O); T:=VDot(R,D);
+    if T<0 then Continue;
+    Dist:=VNorm(VSub(R,VScale(D,T)));
+    if Dist<=PixelWorld*10 then if Dist<Best then begin Best:=Dist; Result:=FModel.Nodes[I].ID; end;
   end;
 end;
 
 function TFEMViewport.PickElement(X,Y,W,H:Integer):Integer;
-var I,A,B:Integer;P1,P2:TPoint;DX,DY,T,QX,QY,D,Best:Double;
-begin Result:=0;Best:=12;
+var I,A,B:Integer; O,D,S,E,U,Wv,Q:TVec3; A1,A2,B1,B2,C,Den,Sc,Tc,Dist,Best,PixelWorld:Double;
+begin
+  Result:=0; Best:=1e100;
+  FCamera.ScreenRay(X,Y,W,H,O,D);
+  PixelWorld:=Max(FCamera.NearClip*2,FCamera.Distance*2/Max(Min(W,H),1));
   for I:=0 to High(FModel.Elements) do if Length(FModel.Elements[I].NodeIDs)>=2 then begin
-    A:=FModel.FindNode(FModel.Elements[I].NodeIDs[0]);B:=FModel.FindNode(FModel.Elements[I].NodeIDs[1]);
+    A:=FModel.FindNode(FModel.Elements[I].NodeIDs[0]); B:=FModel.FindNode(FModel.Elements[I].NodeIDs[1]);
     if (A<0) or (B<0) then Continue;
-    P1:=FCamera.Project(DisplayPosition(A),W,H);P2:=FCamera.Project(DisplayPosition(B),W,H);
-    DX:=P2.X-P1.X;DY:=P2.Y-P1.Y;
-    if Abs(DX)+Abs(DY)<1e-9 then Continue;
-    T:=((X-P1.X)*DX+(Y-P1.Y)*DY)/(DX*DX+DY*DY);T:=Max(0,Min(1,T));
-    QX:=P1.X+T*DX;QY:=P1.Y+T*DY;D:=Hypot(X-QX,Y-QY);
-    if D<Best then begin Best:=D;Result:=FModel.Elements[I].ID;end;
+    S:=O; E:=D; U:=DisplayPosition(A); Wv:=VSub(DisplayPosition(B),U);
+    A1:=VDot(E,E); A2:=VDot(E,Wv); B1:=VDot(E,VSub(S,U)); B2:=VDot(Wv,Wv); C:=VDot(Wv,VSub(S,U));
+    if B2<1e-20 then Continue;
+    Den:=A1*B2-A2*A2;
+    if Abs(Den)<1e-14 then begin Tc:=Max(0,Min(1,C/B2)); Sc:=Max(0,-B1/A1); end
+    else begin Sc:=(A2*C-B2*B1)/Den; Tc:=(A1*C-A2*B1)/Den; Tc:=Max(0,Min(1,Tc)); if Sc<0 then Sc:=0; end;
+    Q:=VSub(VAdd(S,VScale(E,Sc)),VAdd(U,VScale(Wv,Tc))); Dist:=VNorm(Q);
+    if Dist<=PixelWorld*8 then if Dist<Best then begin Best:=Dist; Result:=FModel.Elements[I].ID; end;
   end;
 end;
 
 end.
+

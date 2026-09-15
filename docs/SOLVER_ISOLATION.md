@@ -39,3 +39,4 @@ This allows an engineering result to be traced back to the exact solver boundary
 Isolation is not a claim that the current solver is fully validated. The dense LDL^T implementation remains the **reference solver** and must pass the native verification suite and engineering benchmark cases when compiled and executed in the development environment.
 
 Isolation simply ensures that subsequent UI work does not accidentally alter that numerical implementation.
+
