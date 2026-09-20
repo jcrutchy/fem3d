@@ -1,0 +1,8 @@
+{
+  "nodes": [ { "id": 1, "x": 0, "y": 0, "z": 0 }, { "id": 2, "x": 1, "y": 0, "z": 0 } ],
+  "materials": [ { "id": 1, "E": 2.0e11 } ],
+  "properties": [ { "id": 1, "type": "truss", "material": 1, "area": 0.01 } ],
+  "elements": [ { "id": 1, "type": "truss", "nodes": [1, 99], "property": 1 } ],
+  "constraints": [ { "node": 1, "dof": "x", "value": 0 } ],
+  "loads": []
+}

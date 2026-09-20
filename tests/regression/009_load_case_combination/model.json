@@ -1,0 +1,20 @@
+{
+  "nodes": [
+    { "id": 1, "x": 0.0, "y": 0.0, "z": 0.0 },
+    { "id": 2, "x": 2.0, "y": 0.0, "z": 0.0 }
+  ],
+  "materials": [ { "id": 1, "E": 210.0e9 } ],
+  "properties": [ { "id": 1, "type": "truss", "material": 1, "area": 0.001 } ],
+  "elements": [ { "id": 1, "type": "truss", "nodes": [1, 2], "property": 1 } ],
+  "constraints": [
+    { "node": 1, "dof": "x", "value": 0.0 }, { "node": 1, "dof": "y", "value": 0.0 }, { "node": 1, "dof": "z", "value": 0.0 },
+    { "node": 2, "dof": "y", "value": 0.0 }, { "node": 2, "dof": "z", "value": 0.0 }
+  ],
+  "loadCases": [
+    { "id": "DL", "name": "Dead load", "loads": [ { "node": 2, "dof": "x", "value": -500.0 } ] },
+    { "id": "LL", "name": "Live load", "loads": [ { "node": 2, "dof": "x", "value": -300.0 } ] }
+  ],
+  "combinations": [
+    { "id": "COMB1", "name": "1.2DL + 1.6LL", "terms": [ { "loadCase": "DL", "factor": 1.2 }, { "loadCase": "LL", "factor": 1.6 } ] }
+  ]
+}

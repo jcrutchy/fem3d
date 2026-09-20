@@ -1,0 +1,31 @@
+{
+  "solver": "linstatic",
+  "units": "SI (N, m, Pa)",
+  "nodes": [
+    { "id": 1, "x": 0.0, "y": 0.0, "z": 0.0 },
+    { "id": 2, "x": 4.0, "y": 0.0, "z": 0.0 },
+    { "id": 3, "x": 2.0, "y": 2.0, "z": 0.0 }
+  ],
+  "materials": [
+    { "id": 1, "E": 200.0e9 }
+  ],
+  "properties": [
+    { "id": 1, "type": "truss", "material": 1, "area": 0.0015 }
+  ],
+  "elements": [
+    { "id": 1, "type": "truss", "nodes": [1, 3], "property": 1 },
+    { "id": 2, "type": "truss", "nodes": [2, 3], "property": 1 },
+    { "id": 3, "type": "truss", "nodes": [1, 2], "property": 1 }
+  ],
+  "constraints": [
+    { "node": 1, "dof": "x", "value": 0.0 },
+    { "node": 1, "dof": "y", "value": 0.0 },
+    { "node": 1, "dof": "z", "value": 0.0 },
+    { "node": 2, "dof": "y", "value": 0.0 },
+    { "node": 2, "dof": "z", "value": 0.0 },
+    { "node": 3, "dof": "z", "value": 0.0 }
+  ],
+  "loads": [
+    { "node": 3, "dof": "y", "value": -1000.0 }
+  ]
+}

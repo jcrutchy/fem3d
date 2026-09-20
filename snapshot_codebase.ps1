@@ -1,5 +1,5 @@
 $outputFile = "fem3d_snapshot.txt"
-$excludeFolders = @("lib", ".git", "backup", ".vs", "data")
+$excludeFolders = @("lib", ".git", "backup", ".vs", "data","old_chatgpt")
 
 "--- PROJECT STRUCTURE ---" | Set-Content -Path $outputFile -Encoding utf8
 Get-ChildItem -Recurse | Where-Object { 

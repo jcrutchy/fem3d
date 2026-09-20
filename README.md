@@ -1,202 +1,172 @@
-# FEM3D
-
-Current increment: v0.35 - Viewport Box Selection.
-
-The viewport supports perspective/orthographic inspection, engineering selection, interactive model creation/editing, and now window/crossing box selection with Ctrl-additive selection.
-
-## v0.21 — Engineering viewport
-
-The current viewport increment makes camera-aware picking and the existing sectioning foundation part of the same rendering path.
-
-- Perspective/orthographic screen-ray picking for nodes and line elements.
-- Four-plane clipping state is now consumed by OpenGL; the current GUI drives the primary plane.
-- Primary clipping can reverse the retained side.
-- Presentation-only sectioning remains outside the solver boundary.
-
-# FEM3D v0.30 — Interactive Modelling and Beam Meshing
-
-Native Lazarus/FreePascal 3D finite-element application foundation.
-
-## What changed in v0.5
-
-A verification pass also caught and corrected a dimensional error in the original beam bending stiffness coefficients: the `12EI` terms now use `12EI/L^3` and the `6EI` coupling terms use `6EI/L^2`. This is exactly the sort of defect the analytical regression suite is intended to expose.
-
-This increment deliberately prioritises **trustworthiness and traceability over UI polish**.
-
-### Analysis correctness
-
-- Explicit `TDOFNumbering` abstraction separates equation numbering from node storage order.
-- Constraint handling preserves the **unmodified global stiffness matrix and load vector** so reactions can be recovered from the original equilibrium equations.
-- Solver residuals are now evaluated on the **free equations**, rather than incorrectly treating support reactions as numerical residual error.
-- Support reactions are recovered from `K_original * U - F_original`.
-- The solver reports constrained DOF count, free-equation residual and maximum reaction magnitude.
-- Singular/ill-conditioned pivots are rejected explicitly.
-
-### Model validation
-
-A separate `FEMValidation` layer reports structured diagnostics for:
-
-- duplicate IDs;
-- invalid material properties;
-- invalid beam-section properties;
-- missing node/material/section/load-case references;
-- repeated element nodes;
-- zero-length 3D beams;
-- orphan nodes;
-- empty models/elements.
-
-Validation is performed before assembly.
-
-### Audit trail
-
-Each analysis records a compact audit trail containing:
-
-- model size and equation count;
-- validation result and warning count;
-- assembly diagnostics;
-- number of constrained equations;
-- solver identity.
-
-The trail is currently attached to the analysis result message. It will become a first-class persistent analysis record as the document/result architecture matures.
-
-### Verification suite
-
-`tests/verify.lpr` is a native Pascal verification runner. No Python or external numerical library is required.
-
-Current benchmarks:
-
-1. cantilever bending in global Z â€” analytical Euler-Bernoulli solution;
-2. cantilever bending in global Y â€” analytical solution;
-3. cantilever axial extension â€” `PL/EA`;
-4. cantilever torsional rotation â€” `TL/GJ`;
-5. support reaction equilibrium;
-6. rigid-body mechanism/singularity detection;
-7. model validation error detection.
-
-## Verification policy
-
-FEM3D should distinguish three different claims:
-
-**Verification** â€” the implementation reproduces a known mathematical formulation.
-
-**Validation** â€” the chosen formulation represents the intended physical behaviour with acceptable engineering accuracy.
-
-**Production readiness** â€” the implementation has adequate numerical robustness, performance, documentation, regression coverage and failure diagnostics for its intended engineering use.
-
-Passing the current tests is only a verification milestone. It is **not** a claim that FEM3D is yet a production FEA solver.
-
-In particular, the current triangular element is an extension boundary only and provides no structural stiffness. It must not be used as a plate-bending element. Proper shell/plate formulations will be introduced only with analytical benchmarks, patch tests and convergence studies.
-
-## Planned next engineering increments
-
-1. First-class analysis cases and persistent audit records.
-2. Prescribed non-zero displacements and complete reaction recovery.
-3. Beam force/moment result recovery in local coordinates.
-4. Symmetry, positive-definiteness and energy consistency checks.
-5. Sparse/profile matrix storage with the dense solver retained as a reference path.
-6. Dense-versus-sparse regression comparisons.
-7. Expanded analytical frame benchmarks and mesh/refinement studies.
-8. Proper second-order shell elements (Quad8/Tri6) with documented formulation and validation evidence.
-9. Only after profiling: optimised Pascal kernels and narrowly targeted ASM/SIMD paths with reference-kernel regression tests.
-
-## Build status
-
-The project is structured as a Lazarus/FreePascal application and native Pascal test project. The execution environment used to prepare this archive does **not** contain Lazarus/FreePascal, so compilation could not be performed here. The source has been reviewed statically, but the archive should be compiled with the target FPC/Lazarus version before relying on it.
-
-
-## v0.6 trust-oriented analysis increment
-
-Analysis results now retain a structured `AuditTrail` object in addition to the human-readable message. The audit records model size, validation status, assembly diagnostics, constraints, solver identity, residuals, reactions and energy balance. This is intended to become a persistent analysis provenance record in the eventual project/results database.
-
-## v0.7 solver architecture
-The numerical solver boundary is now deliberately process-oriented. `FEM3D.exe` is the modelling/result GUI; `FEM3D_LinStatic.exe` is an independent Windows x64 solver executable consuming a prepared FEM3D ASCII model/analysis file. This permits command-line and batch execution and keeps numerical solver failures isolated from the modelling GUI.
-
-The model file persists analysis cases and solver configuration. The solver produces a separate `.fem3dres` ASCII result file containing solver metadata, deterministic model/analysis fingerprints, displacements, reactions and the audit trail. The fingerprints are deterministic 64-bit FNV-1a identifiers and are **not cryptographic hashes**.
-
-Solver-specific GUI controls are intentionally treated as a future plugin boundary. A solver UI DLL may own configuration presentation/validation, while the numerical solver remains an EXE with a stable ASCII contract.
-
-Current limitation: only Linear Static using the dense reference LDL^T solver is executable. Skyline storage, sparse production solvers and the other analysis types remain defined architectural targets, not implemented capabilities.
-
-## Primary analysis workflow
-
-The primary FEM3D analysis family is now centred on three engineering workflows:
-
-1. **Linear Static** â€” implemented through the external reference solver `FEM3D_LinStatic.exe`.
-2. **Linear Buckling** â€” persistent settings and external solver boundary are implemented, but numerical solving is gated pending verification of geometric stiffness and eigenvalue extraction.
-3. **Nonlinear Static** â€” persistent load-step/convergence settings and external solver boundary are implemented, but numerical solving is gated pending verification of nonlinear element tangents and convergence behaviour.
-
-The modelling GUI prepares the analysis definition and launches a separate solver process. This keeps the numerical solver independent from the GUI and makes batch/CLI operation a first-class workflow.
-
-### Linear Static result inspection
-
-The current development line now treats Linear Static as the primary end-to-end reference workflow. The GUI can display exaggerated deformed geometry, generic node/element result contours, reactions, beam axial stress, result legends, selected-entity result values, and simple user-defined result expressions. The expression evaluator is intentionally small and deterministic at this stage; it is a foundation for later engineering/fatigue equations rather than a general scripting engine.
-
-Model validation is also becoming an interactive engineering diagnostic rather than only a pass/fail gate, including element aspect-ratio and beam slenderness checks.
-
-### v0.9 result inspection direction
-Linear Static is currently the primary numerical reference workflow. Result fields are deliberately generic: direct solver quantities, recovered beam forces and deterministic user expressions feed the same inspection/contour path. The expression evaluator supports arithmetic, comparisons, SQRT/ABS/MIN/MAX and IF(), allowing simple derived engineering quantities without embedding arbitrary scripting in model files.
-
-### v0.10 engineering inspection
-
-The Linear Static result viewer now provides node/element result tables, field statistics, and richer deterministic derived-result expressions. Validation findings retain optional entity references so geometry-quality diagnostics can be connected directly to viewport selection in a subsequent UI pass.
-
-## v0.11 graphics
-
-FEM3D now has an OpenGL-based engineering viewport foundation. The LCL provides `TOpenGLControl` through the `lazopenglcontext` package; on Windows the control uses WGL. The renderer is intentionally kept in `FEMOpenGLView.pas` rather than coupling OpenGL calls into the model/result classes.
-
-The initial renderer provides depth-buffered 3D linework, deformed/undeformed overlays, contour colours, selection highlighting, axes, grid, and an interactive X/Y/Z clipping plane. The existing `TFEMViewport` remains responsible for camera/picking semantics and is also a useful fallback/reference renderer.
-
-## Solver validation boundary
-
-The numerical solver executables are intentionally isolated from the modelling and graphics source tree. The solver projects consume snapshots under `solver/core`, while result files retain solver/kernel provenance. This means graphics and viewer development can proceed without silently changing an already validated numerical kernel.
-
-### v0.33 viewport graphics
-
-The OpenGL viewport now has independently switchable engineering symbol layers for loads, restraints, element local axes and coordinate-system triads. These are presentation-only and remain outside the numerical solver boundary.
-
-
-## v0.22 — 3D member body rendering
-
-The engineering viewport can now display `BEAM3D` members as faceted 3D bodies rather than centre-lines. The body is intentionally an **area-equivalent display proxy**, not a claim about the physical section shape. This keeps the existing transparent section data and solver formulation unchanged while making perspective inspection substantially more useful.
-
-Use the **Solid members** viewport toggle to switch between body and centre-line display. Element edge visibility remains separately controlled.
-
-
-## v0.23 engineering viewport feedback
-
-The viewport now maintains a separate hover/preselection state from persistent selection. Hover uses the camera-aware screen-ray picking path and is presentation-only; it does not modify the model or solver state.
-
-
-## v0.24 modelling foundation
-The GUI now has an explicit model-editing layer with node/beam creation, node movement, deletion, beam splitting, and snapshot-based undo/redo. See `docs/MODEL_EDITING.md`.
-
-
-## v0.25 interactive modelling
-
-The viewport now supports a first direct-construction workflow. **Add node** places nodes by intersecting the camera ray with an XY/XZ/YZ construction plane, with optional grid snapping. **Add beam** creates or reuses two nodes and creates BEAM3D members in sequence, making simple frame/line construction much faster than dialog-only editing. All changes continue through the model editor command layer and remain undoable. See `docs/INTERACTIVE_MODELLING.md`.
-
-## Interactive modelling
-
-The current modeller supports viewport-driven node and beam creation, construction-plane/grid snapping, beam chaining, beam splitting, conservative snapshot undo/redo, and viewport-driven node movement with a non-destructive drag preview. Model edits remain separated from the numerical solver layer.
-
-
-### Interactive modelling — v0.27
-
-The modeller now provides rubber-band feedback while creating chained BEAM3D geometry, construction-plane-aware grid snapping, and equal-length beam subdivision through the model-editing command layer. Model mutations remain undoable and invalidate stale results.
-
-
-### v0.28 modelling assignment
-
-Interactive BEAM3D creation exposes material, section and group assignment directly in the model-editing panel, while the selection inspector now remains useful before any analysis results exist.
-
-
-### v0.29 beam meshing
-
-Straight two-node BEAM3D members can now be subdivided automatically from a requested maximum element length. The mesher remains separate from the FEM solver and delegates all topology mutation to the undoable model-editing layer.
-
-### v0.31 modelling increment
-The modeller now supports batch engineering-property assignment to the current element selection. Material, beam section and group references can be assigned to multiple selected elements as one undoable operation. This establishes the pattern needed for later multi-element transformations and property editing without coupling those operations to the solver.
-
-### v0.34 CAD wireframe import
-
-FEM3D now has a more deliberate CAD-wireframe import path for structural stick models. DXF LINE/POINT/LWPOLYLINE geometry can be promoted to BEAM3D elements, and IGES Type 110 wireframe lines can be imported. Imported geometry receives placeholder engineering properties that must be reviewed before analysis. Persistent IGES surface geometry is intentionally reserved for the forthcoming CAD geometry/surface-meshing layer.
+# FEM Suite
+
+A modular, CLI-first finite element analysis package in FreePascal. Zero
+third-party dependencies — only the FPC standard RTL (`fpjson`,
+`jsonparser`, `Generics.Collections`, `SysUtils`, `Classes`).
+
+## Architecture
+
+- **Model file → solver executable → stdout.** Each solver is a separate
+  `.lpr` program. A model (nodes, elements, properties, freedom cases,
+  load cases, combinations, solver params) is a single JSON file passed
+  as the one CLI argument; results go to stdout, redirect as needed.
+- **Common units, shared by every solver:**
+  - `fem_types.pas` — the model's data structures (plain records/arrays,
+    no logic).
+  - `fem_json_model.pas` — parses a model file into a `TModel`. Only
+    checks structural JSON validity (right types, right shape) — no
+    semantic checks.
+  - `fem_validate.pas` — the one validation unit every solver runs before
+    touching a matrix. Semantic checks: dangling references, duplicate
+    ids, unsupported element types, non-positive properties, missing
+    constraints, etc. Returns a list of errors; empty = valid.
+  - `fem_index.pas` — id → array-index lookup maps (`TDictionary`-based),
+    used by both `fem_validate` and the solvers.
+  - `fem_skyline.pas` — the common matrix library: symmetric skyline
+    storage + in-place LDL^T factorization + solve. Solver-agnostic; any
+    solver that needs to solve `Kx=b` for a sparse symmetric system uses
+    this.
+  - `fem_elements.pas` — element stiffness formulations: the 3D 2-node
+    space-truss (axial bar) and the 3D 2-node Euler-Bernoulli beam
+    (axial + biaxial bending + torsion). Both return a generic dynamically-
+    sized matrix so solvers can assemble either uniformly.
+  - `fem_dofmap.pas` — per-node dof counts, global dof numbering, and
+    constraint elimination. Shared by every solver so two solvers can
+    never number the same model's dofs differently; `linstatic` and
+    `modal` both build a `TDofMap` from this unit rather than each
+    rolling their own.
+  - `fem_eigen.pas` — a from-scratch Jacobi eigenvalue algorithm for
+    real symmetric matrices (used by `modal`; general enough for any
+    future solver that needs a dense symmetric eigendecomposition).
+  - `fem_sha256.pas` — pure-Pascal SHA-256 (FPC's stdlib `hash` package
+    ships MD5/SHA1 but not SHA256), used by the regression harness for
+    model/manifest integrity checks.
+- **Solvers**, each its own executable under `src/solvers/<name>/`:
+  - `linstatic` — linear-static analysis via the skyline solver. The
+    first one, and the reference implementation for the conventions above
+    (exit codes, KV output, `FEM_DEBUG`, stdin via `-`).
+  - `modal` — lumped-mass modal analysis (natural frequencies + mode
+    shapes) via a dense Jacobi eigensolve. See `docs/modal.md`. The
+    second solver, and the first real test of the "common library,
+    separate executable" architecture: shares `fem_types`,
+    `fem_json_model`, `fem_validate`, `fem_index`, `fem_dofmap`,
+    `fem_elements` with `linstatic`, and only diverges where the physics
+    genuinely diverges (mass instead of just stiffness, an eigensolve
+    instead of a linear solve).
+- **Adaptors** (planned, see `docs/adaptors.md`), under
+  `src/adaptors/<format>/` — convert some other ASCII format (Strand7
+  `.txt`, etc.) into the canonical JSON model. Solvers never parse
+  anything but the canonical format; this is the only place other
+  formats enter the pipeline. `adapt_x in.txt | linstatic -`.
+- **Tools**, under `src/tools/<name>/`:
+  - `fem_regress` — the regression test harness (see
+    `docs/regression_testing.md`). Runs manifest-declared cases, checks
+    model/manifest integrity via SHA-256, compares solver output against
+    hand-verified expectations within tolerance, and separately checks
+    that deliberately-invalid ("BORKED") models are correctly rejected.
+
+See `docs/model_format.md` for the full model file schema, exit code
+conventions, KV output format, and the `FEM_DEBUG=1` debug dump.
+
+## Building
+
+```
+fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
+    src/solvers/linstatic/linstatic.lpr
+
+fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
+    src/solvers/modal/modal.lpr
+
+fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
+    src/tools/fem_regress/fem_regress.lpr
+```
+
+(`-FE`/`-FU` = executable/unit output dirs, `-Fu` = common-unit search
+path. Each new solver/tool/adaptor just needs the same `-Fu` flag pointed
+at `src/common`.)
+
+## Running
+
+```
+./bin/linstatic examples/aframe_truss.json
+./bin/linstatic tests/single_bar.json > results.txt
+cat tests/single_bar.json | ./bin/linstatic -          # stdin works too
+
+./bin/modal tests/regression/005_modal_single_dof/model.json
+
+./bin/fem_regress tests/regression --bin bin            # run every regression case
+```
+
+## Tests / examples
+
+- `tests/single_bar.json` — single axial bar, closed-form answer
+  (`u = PL/AE`); used as a basic regression check.
+- `tests/mechanism_should_fail.json` — a 2-member "A-frame" with a
+  sliding roller and no bottom chord: statically a 1-DOF mechanism.
+  Expected to fail with exit code 4 (singular pivot) — a useful
+  regression check that the solver actually detects instability rather
+  than silently returning garbage.
+- `tests/dangling_ref_should_fail.json` — element references a
+  non-existent node; expected to fail with exit code 3.
+- `examples/aframe_truss.json` — the same A-frame with the bottom chord
+  added (statically determinate), cross-checked independently against a
+  NumPy assembly of the same model.
+- `tests/regression/` — the same cases (plus the two "should fail" ones),
+  wired up as `fem_regress` manifest-driven cases with SHA-256-protected
+  models and hand-verified expected values. See
+  `docs/regression_testing.md`. This is the version worth trusting and
+  extending going forward; the flat files above are just how they were
+  worked out during development. 17 cases as of now: 4 truss, 2 beam,
+  2 moment frame (an L-shaped cantilever with hand-verified reactions,
+  and a statically-indeterminate portal frame cross-checked against
+  NumPy), 2 modal, 1 load-case-combination, 1 multi-freedom-case, and
+  5 deliberately-BORKED.
+
+## Status / next steps
+
+- [x] Model format + JSON loader (file or stdin)
+- [x] Common validation unit
+- [x] Skyline matrix library (LDL^T, relative-tolerance singularity check)
+- [x] `linstatic`: 3D space-truss elements, prescribed (incl. non-zero)
+      displacement constraints, point loads, reactions
+- [x] `linstatic`: 3D Euler-Bernoulli beam elements (axial + biaxial
+      bending + torsion), variable dofs/node (3 or 6, per-node), a
+      configurable orientation reference vector with a sensible default
+- [x] Canonical KV output format (`DISP.*` / `REACT.*`)
+- [x] Regression harness (`fem_regress`) with integrity-checked manifests
+      and both VERIFIED and deliberately-BORKED cases (13 cases: 4 truss,
+      2 beam, 2 modal, 5 borked)
+- [x] `fem_dofmap`: DOF numbering factored out of `linstatic` into a
+      shared unit, so a second solver can't number a model's dofs
+      differently
+- [x] `modal`: lumped-mass modal analysis via a from-scratch Jacobi
+      eigensolver (`fem_eigen`) — the second solver, proving out the
+      shared-library architecture for real (see `docs/modal.md`)
+- [x] 3D moment frame regression tests (L-shaped cantilever with
+      hand-verified reactions; a statically-indeterminate portal frame
+      cross-checked against NumPy) — no new element code needed, the
+      beam element already models full moment continuity at shared nodes
+- [x] Load cases, freedom cases, and combinations (Strand7-style):
+      multiple named load/constraint sets per model, solved together
+      (one stiffness factorization per freedom case, reused across every
+      load case's RHS), plus combinations as exact post-hoc linear
+      superposition. Fully backward compatible -- a legacy single-case
+      model's output is byte-identical to before. See `docs/model_format.md`.
+- [ ] Plate/shell elements, including a 2nd-order variant — substantial
+      scope on its own (shape functions, Gauss quadrature, Jacobian-mapped
+      B-matrix, membrane/bending coupling); planned as its own incremental
+      build (like truss -> beam), not started
+- [ ] A compact native format (Strand7-`.txt`-like: sectioned, tabular
+      rows) for both models and solver results, replacing JSON as the
+      primary format (JSON becomes an adaptor input) once real models
+      reach node/element counts where JSON's verbosity actually matters;
+      results filenames specified per-solver in the model file rather
+      than solvers only writing to stdout. Planned as its own dedicated
+      pivot, not started
+- [ ] Adaptors for other ASCII formats (Strand7 `.txt` first candidate;
+      see `docs/adaptors.md` — low priority for now, not started)
+- [ ] Rotary inertia for beam elements, so `modal` can handle a beam's
+      rotational dofs when they're free rather than requiring them fixed
+- [ ] A third solver would be the next real test of the shared-library
+      pattern (nonlinear static? a sparse/iterative modal for larger
+      models?)

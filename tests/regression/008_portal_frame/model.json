@@ -1,0 +1,22 @@
+{
+  "nodes": [
+    { "id": 1, "x": 0.0, "y": 0.0, "z": 0.0 },
+    { "id": 2, "x": 0.0, "y": 3.0, "z": 0.0 },
+    { "id": 3, "x": 5.0, "y": 3.0, "z": 0.0 },
+    { "id": 4, "x": 5.0, "y": 0.0, "z": 0.0 }
+  ],
+  "materials": [ { "id": 1, "E": 200.0e9, "nu": 0.3 } ],
+  "properties": [ { "id": 1, "type": "beam", "material": 1, "area": 0.006, "Iy": 5.0e-5, "Iz": 9.0e-5, "J": 3.0e-5 } ],
+  "elements": [
+    { "id": 1, "type": "beam", "nodes": [1, 2], "property": 1 },
+    { "id": 2, "type": "beam", "nodes": [2, 3], "property": 1 },
+    { "id": 3, "type": "beam", "nodes": [3, 4], "property": 1 }
+  ],
+  "constraints": [
+    { "node": 1, "dof": "x", "value": 0.0 }, { "node": 1, "dof": "y", "value": 0.0 }, { "node": 1, "dof": "z", "value": 0.0 },
+    { "node": 1, "dof": "rx", "value": 0.0 }, { "node": 1, "dof": "ry", "value": 0.0 }, { "node": 1, "dof": "rz", "value": 0.0 },
+    { "node": 4, "dof": "x", "value": 0.0 }, { "node": 4, "dof": "y", "value": 0.0 }, { "node": 4, "dof": "z", "value": 0.0 },
+    { "node": 4, "dof": "rx", "value": 0.0 }, { "node": 4, "dof": "ry", "value": 0.0 }, { "node": 4, "dof": "rz", "value": 0.0 }
+  ],
+  "loads": [ { "node": 2, "dof": "x", "value": 1000.0 } ]
+}
