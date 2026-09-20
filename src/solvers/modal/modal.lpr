@@ -4,7 +4,7 @@ program modal;
 
 uses
   SysUtils, Classes, Generics.Collections, Math,
-  fem_types, fem_json_model, fem_validate, fem_index, fem_dofmap, fem_eigen, fem_elements;
+  fem_types, fem_native_model, fem_validate, fem_index, fem_dofmap, fem_eigen, fem_elements;
 
 const
   ExitOk           = 0;
@@ -36,36 +36,6 @@ end;
 function ElementGlobalDofs(const el: TElement): TIntArray;
 begin
   Result := fem_dofmap.ElementGlobalDofs(DofMap, NodeIdx, el);
-end;
-
-function ElementStiffness(const el: TElement): TElemMatrix;
-var
-  prop: TProperty;
-  mat: TMaterial;
-  n1, n2: TNode;
-  G: Double;
-  refVec: array[0..2] of Double;
-begin
-  prop := Model.Properties[PropIdx[el.PropertyId]];
-  mat := Model.Materials[MatIdx[prop.MaterialId]];
-  n1 := Model.Nodes[NodeIdx[el.NodeIds[0]]];
-  n2 := Model.Nodes[NodeIdx[el.NodeIds[1]]];
-  if el.ElementType = 'truss' then
-    Result := TrussStiffness3D(mat.E, prop.Area, n1.X, n1.Y, n1.Z, n2.X, n2.Y, n2.Z)
-  else
-  begin
-    G := mat.E / (2.0 * (1.0 + mat.Nu));
-    if el.HasRefVec then
-    begin
-      refVec[0] := el.RefVec[0]; refVec[1] := el.RefVec[1]; refVec[2] := el.RefVec[2];
-    end
-    else
-    begin
-      refVec[0] := 0; refVec[1] := 0; refVec[2] := 0;
-    end;
-    Result := BeamStiffness3D(mat.E, G, prop.Area, prop.Iy, prop.Iz, prop.J,
-      n1.X, n1.Y, n1.Z, n2.X, n2.Y, n2.Z, refVec);
-  end;
 end;
 
 // Lumped mass: half the element's total mass to each end node's 3
@@ -116,13 +86,14 @@ var
   FC: TFreedomCase;
   UseBareKeys: Boolean;
   KeyPrefix: string;
+  OutF: Text;
 begin
   FS := DefaultFormatSettings;
   FS.DecimalSeparator := '.';
 
   // ---- 1. CLI ----
   if ParamCount <> 1 then
-    Fail(ExitUsage, 'Usage: modal <model.json | ->' + LineEnding +
+    Fail(ExitUsage, 'Usage: modal <model.fem | ->' + LineEnding +
       '  Reads a FEM model file (or "-" for stdin), runs a lumped-mass modal' + LineEnding +
       '  analysis (Jacobi eigensolve), and writes natural frequencies and mode' + LineEnding +
       '  shapes to stdout.');
@@ -189,6 +160,14 @@ begin
 
   UseBareKeys := Length(Model.FreedomCases) = 1;
 
+  if Model.SolverParams.HasResultsFile then
+  begin
+    AssignFile(OutF, Model.SolverParams.ResultsFile);
+    Rewrite(OutF);
+  end
+  else
+    OutF := Output;
+
   // ---- 5-9. One pass per freedom case: dof map, mass+stiffness, eigensolve, output ----
   // Modal analysis has no load cases (the eigenproblem is homogeneous), so
   // unlike linstatic this only loops over freedom cases, not load cases too.
@@ -220,7 +199,7 @@ begin
       for ei := 0 to High(Model.Elements) do
       begin
         el := Model.Elements[ei];
-        Klocal := ElementStiffness(el);
+        Klocal := ElementStiffnessFor(Model, NodeIdx, MatIdx, PropIdx, el);
         gd := ElementGDofs[ei];
         N := High(gd);
         for i := 1 to N do
@@ -299,9 +278,9 @@ begin
     // in the Euclidean sense, and phi = D^-1 y => phi^T M phi = y^T y = 1).
     if fcIdx = 0 then
     begin
-      WriteLn('# FreePascal FEM Suite - modal (lumped-mass Jacobi eigensolver)');
-      WriteLn(Format('# model=%s', [ModelFile]));
-      WriteLn(Format('# nodes=%d elements=%d freedom_cases=%d',
+      WriteLn(OutF, '# FreePascal FEM Suite - modal (lumped-mass Jacobi eigensolver)');
+      WriteLn(OutF, Format('# model=%s', [ModelFile]));
+      WriteLn(OutF, Format('# nodes=%d elements=%d freedom_cases=%d',
         [Length(Model.Nodes), Length(Model.Elements), Length(Model.FreedomCases)]));
     end;
     nModes := DofMap.NEQ;
@@ -313,18 +292,18 @@ begin
           'positive semi-definite; check the model for an unstable/mechanism sub-structure', [FC.Id, i, EigVals[i]]));
       omega := Sqrt(EigVals[i]);
       freq := omega / (2 * Pi);
-      WriteLn(Format('%sMODE.%d.omega=%.17e', [KeyPrefix, i, omega], FS));
-      WriteLn(Format('%sMODE.%d.freq=%.17e', [KeyPrefix, i, freq], FS));
+      WriteLn(OutF, Format('%sMODE.%d.omega=%.17e', [KeyPrefix, i, omega], FS));
+      WriteLn(OutF, Format('%sMODE.%d.freq=%.17e', [KeyPrefix, i, freq], FS));
       for j := 0 to High(Model.Nodes) do
         for eq_i := 0 to DofMap.NodeDofCounts[j] - 1 do
         begin
           gi := fem_dofmap.GlobalDof(DofMap, j, eq_i);
           eq_j := DofMap.GlobalToEq[gi];
           if eq_j > 0 then
-            WriteLn(Format('%sMODE.%d.DISP.%d.%s=%.17e',
+            WriteLn(OutF, Format('%sMODE.%d.DISP.%d.%s=%.17e',
               [KeyPrefix, i, Model.Nodes[j].Id, DofNames[eq_i], EigVecs[eq_j][i] / Dsqrt[eq_j]], FS))
           else
-            WriteLn(Format('%sMODE.%d.DISP.%d.%s=%.17e', [KeyPrefix, i, Model.Nodes[j].Id, DofNames[eq_i], 0.0], FS));
+            WriteLn(OutF, Format('%sMODE.%d.DISP.%d.%s=%.17e', [KeyPrefix, i, Model.Nodes[j].Id, DofNames[eq_i], 0.0], FS));
         end;
     end;
   end;
@@ -332,5 +311,12 @@ begin
   NodeIdx.Free;
   MatIdx.Free;
   PropIdx.Free;
+  if Model.SolverParams.HasResultsFile then
+  begin
+    CloseFile(OutF);
+    WriteLn(Format('Results written to %s', [Model.SolverParams.ResultsFile]));
+  end
+  else
+    Flush(OutF); // Halt() below can otherwise skip the buffer flush a normal exit would do
   Halt(ExitOk);
 end.

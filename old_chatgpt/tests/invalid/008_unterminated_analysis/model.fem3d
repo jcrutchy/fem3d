@@ -1,0 +1,6 @@
+FEM3D 0.7
+LOADCASE 1 "LC1"
+[ANALYSIS_CASE 1]
+Name=Linear static
+Type=LINEAR_STATIC
+LoadCase=1

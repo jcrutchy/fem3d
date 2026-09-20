@@ -1,0 +1,13 @@
+FEM3D 0.7
+MATERIAL 1 "Steel" 2e11 0.3 7850
+SECTION 1 "Section" 0.01 8e-6 3e-6 1e-6
+LOADCASE 1 "LC1"
+NODE 1 0 0 0 1 1 1 1 1 1
+ELEMENT 1 BEAM3D 1 1 0 0 1 99
+[ANALYSIS_CASE 1]
+Name=Missing node case
+LoadCase=1
+Type=LINEAR_STATIC
+MatrixStorage=DENSE
+Solver=ReferenceDenseLDLT
+[END_ANALYSIS_CASE]

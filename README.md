@@ -6,16 +6,24 @@ third-party dependencies — only the FPC standard RTL (`fpjson`,
 
 ## Architecture
 
-- **Model file → solver executable → stdout.** Each solver is a separate
-  `.lpr` program. A model (nodes, elements, properties, freedom cases,
-  load cases, combinations, solver params) is a single JSON file passed
-  as the one CLI argument; results go to stdout, redirect as needed.
+- **Model file → solver executable → stdout (or a results file).** Each
+  solver is a separate `.lpr` program. A model (nodes, elements,
+  properties, freedom cases, load cases, combinations, solver params) is
+  a single native `.fem` file (see `docs/native_format.md` — sectioned,
+  tabular, Strand7-`.txt`-like, not JSON) passed as the one CLI argument;
+  results go to stdout by default, or to a file named in the model's own
+  `[SOLVERPARAMS]` section.
 - **Common units, shared by every solver:**
   - `fem_types.pas` — the model's data structures (plain records/arrays,
     no logic).
-  - `fem_json_model.pas` — parses a model file into a `TModel`. Only
-    checks structural JSON validity (right types, right shape) — no
-    semantic checks.
+  - `fem_native_model.pas` — parses a model file into a `TModel`. The
+    format every solver actually reads. Only checks structural validity
+    (right shape) — no semantic checks.
+  - `fem_native_writer.pas` — writes a `TModel` back out in native
+    format; used by `adapt_json`.
+  - `fem_json_model.pas` — the original JSON parser. No longer used by
+    any solver directly — only by `adapt_json` now, converting JSON
+    input into the native format upstream of the solvers.
   - `fem_validate.pas` — the one validation unit every solver runs before
     touching a matrix. Semantic checks: dangling references, duplicate
     ids, unsupported element types, non-positive properties, missing
@@ -38,35 +46,56 @@ third-party dependencies — only the FPC standard RTL (`fpjson`,
   - `fem_eigen.pas` — a from-scratch Jacobi eigenvalue algorithm for
     real symmetric matrices (used by `modal`; general enough for any
     future solver that needs a dense symmetric eigendecomposition).
+  - `fem_pcg.pas` — element-by-element (matrix-free) preconditioned
+    conjugate gradient, with a persistent multithreaded worker pool for
+    the per-iteration matrix-vector product. Used by `linsparse`. See
+    `docs/linsparse.md` for what's actually been verified about it
+    (correctness: yes; threading benefit at tested scale: not yet shown;
+    robustness on slender/bending-dominated geometry: a known limitation).
   - `fem_sha256.pas` — pure-Pascal SHA-256 (FPC's stdlib `hash` package
     ships MD5/SHA1 but not SHA256), used by the regression harness for
     model/manifest integrity checks.
 - **Solvers**, each its own executable under `src/solvers/<name>/`:
   - `linstatic` — linear-static analysis via the skyline solver. The
     first one, and the reference implementation for the conventions above
-    (exit codes, KV output, `FEM_DEBUG`, stdin via `-`).
+    (exit codes, KV output, `FEM_DEBUG`, stdin via `-`, `ResultsFile`).
+    The reliable default — exact, robust regardless of geometry.
   - `modal` — lumped-mass modal analysis (natural frequencies + mode
     shapes) via a dense Jacobi eigensolve. See `docs/modal.md`. The
-    second solver, and the first real test of the "common library,
-    separate executable" architecture: shares `fem_types`,
-    `fem_json_model`, `fem_validate`, `fem_index`, `fem_dofmap`,
-    `fem_elements` with `linstatic`, and only diverges where the physics
-    genuinely diverges (mass instead of just stiffness, an eigensolve
-    instead of a linear solve).
-- **Adaptors** (planned, see `docs/adaptors.md`), under
-  `src/adaptors/<format>/` — convert some other ASCII format (Strand7
-  `.txt`, etc.) into the canonical JSON model. Solvers never parse
-  anything but the canonical format; this is the only place other
-  formats enter the pipeline. `adapt_x in.txt | linstatic -`.
+    second solver, proving out the "common library, separate executable"
+    architecture: shares `fem_types`, `fem_native_model`, `fem_validate`,
+    `fem_index`, `fem_dofmap`, `fem_elements` with `linstatic`, and only
+    diverges where the physics genuinely diverges (mass instead of just
+    stiffness, an eigensolve instead of a linear solve).
+  - `linsparse` — the same linear-static analysis as `linstatic`, but via
+    a matrix-free, multithreaded PCG solve instead of a direct skyline
+    factorization. See `docs/linsparse.md` for an honest account of what
+    this has and hasn't been shown to deliver yet (correctness: verified
+    against `linstatic` on every applicable regression case; performance:
+    not yet a demonstrated win at any tested scale; a real, found
+    limitation on slender/bending-dominated geometry with the current
+    Jacobi preconditioner).
+- **Adaptors**, under `src/adaptors/<format>/` — convert some other
+  format into the canonical native model. Solvers never parse anything
+  but the native format; this is the only place other formats enter the
+  pipeline. See `docs/adaptors.md`.
+  - `adapt_json` — converts a JSON model (the format this suite used to
+    read directly, before the native format existed) into native `.fem`.
+    `adapt_json old.json | linstatic -`.
 - **Tools**, under `src/tools/<name>/`:
   - `fem_regress` — the regression test harness (see
     `docs/regression_testing.md`). Runs manifest-declared cases, checks
     model/manifest integrity via SHA-256, compares solver output against
     hand-verified expectations within tolerance, and separately checks
     that deliberately-invalid ("BORKED") models are correctly rejected.
+    Captures a solver's stdout/stderr on two independent reader threads
+    (see the top of `fem_regress.lpr`) — deliberate, not incidental: it
+    dodges both a two-pipe deadlock and an FPC `TProcess.Running` quirk
+    that corrupts exit codes, each of which a simpler approach hit in turn.
 
-See `docs/model_format.md` for the full model file schema, exit code
-conventions, KV output format, and the `FEM_DEBUG=1` debug dump.
+See `docs/native_format.md` for the file syntax, `docs/model_format.md`
+for the schema/semantics (format-agnostic), and `docs/modal.md` for the
+modal solver's specifics.
 
 ## Building
 
@@ -76,6 +105,12 @@ fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
 
 fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
     src/solvers/modal/modal.lpr
+
+fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
+    src/solvers/linsparse/linsparse.lpr
+
+fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
+    src/adaptors/adapt_json/adapt_json.lpr
 
 fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
     src/tools/fem_regress/fem_regress.lpr
@@ -88,85 +123,93 @@ at `src/common`.)
 ## Running
 
 ```
-./bin/linstatic examples/aframe_truss.json
-./bin/linstatic tests/single_bar.json > results.txt
-cat tests/single_bar.json | ./bin/linstatic -          # stdin works too
+./bin/linstatic tests/regression/001_single_bar/model.fem
+./bin/linstatic tests/regression/001_single_bar/model.fem > results.txt
+cat tests/regression/001_single_bar/model.fem | ./bin/linstatic -   # stdin works too
 
-./bin/modal tests/regression/005_modal_single_dof/model.json
+./bin/modal tests/regression/005_modal_single_dof/model.fem
 
-./bin/fem_regress tests/regression --bin bin            # run every regression case
+./bin/linsparse tests/regression/011_sparse_single_bar/model.fem
+FEM_THREADS=8 ./bin/linsparse some_large_model.fem   # see docs/linsparse.md before relying on this for speed
+
+./bin/adapt_json some_old_model.json > model.fem   # bring in a JSON model
+
+./bin/fem_regress tests/regression --bin bin        # run every regression case
 ```
 
 ## Tests / examples
 
-- `tests/single_bar.json` — single axial bar, closed-form answer
-  (`u = PL/AE`); used as a basic regression check.
-- `tests/mechanism_should_fail.json` — a 2-member "A-frame" with a
-  sliding roller and no bottom chord: statically a 1-DOF mechanism.
-  Expected to fail with exit code 4 (singular pivot) — a useful
-  regression check that the solver actually detects instability rather
-  than silently returning garbage.
-- `tests/dangling_ref_should_fail.json` — element references a
-  non-existent node; expected to fail with exit code 3.
-- `examples/aframe_truss.json` — the same A-frame with the bottom chord
-  added (statically determinate), cross-checked independently against a
-  NumPy assembly of the same model.
-- `tests/regression/` — the same cases (plus the two "should fail" ones),
-  wired up as `fem_regress` manifest-driven cases with SHA-256-protected
-  models and hand-verified expected values. See
-  `docs/regression_testing.md`. This is the version worth trusting and
-  extending going forward; the flat files above are just how they were
-  worked out during development. 17 cases as of now: 4 truss, 2 beam,
-  2 moment frame (an L-shaped cantilever with hand-verified reactions,
-  and a statically-indeterminate portal frame cross-checked against
-  NumPy), 2 modal, 1 load-case-combination, 1 multi-freedom-case, and
-  5 deliberately-BORKED.
+- `tests/regression/` — `fem_regress` manifest-driven cases with
+  SHA-256-protected models and hand-verified expected values. See
+  `docs/regression_testing.md`. 23 cases: 4 truss, 2 beam, 2 moment
+  frame (an L-shaped cantilever with hand-verified reactions, and a
+  statically-indeterminate portal frame cross-checked against NumPy),
+  2 modal, 1 load-case-combination, 1 multi-freedom-case, 5 of the above
+  re-run through `linsparse` to cross-check it against `linstatic`, and
+  6 deliberately-BORKED (one of them `linsparse`-specific, proving PCG's
+  non-positive-definite check catches the same mechanism `linstatic`'s
+  zero-pivot check does). Each case directory keeps both `model.fem`
+  (what solvers actually read) and, where applicable, the original
+  `model.json` it was converted from via `adapt_json`, as a working
+  round-trip check.
+- `tests/*.json`, `examples/*.json` — earlier, pre-regression-harness
+  JSON models from when this suite was worked out during development;
+  kept for reference but not wired into anything, and not converted to
+  native format (still readable via `adapt_json` if ever needed).
 
 ## Status / next steps
 
-- [x] Model format + JSON loader (file or stdin)
+- [x] Native model format (`.fem`, sectioned/tabular) + parser + writer;
+      every solver reads only this. See `docs/native_format.md`
+- [x] `adapt_json`: JSON -> native format adaptor, replacing direct JSON
+      support in solvers
+- [x] Results can go to a file named in the model's own
+      `[SOLVERPARAMS].ResultsFile`, not just stdout
 - [x] Common validation unit
 - [x] Skyline matrix library (LDL^T, relative-tolerance singularity check)
-- [x] `linstatic`: 3D space-truss elements, prescribed (incl. non-zero)
-      displacement constraints, point loads, reactions
-- [x] `linstatic`: 3D Euler-Bernoulli beam elements (axial + biaxial
-      bending + torsion), variable dofs/node (3 or 6, per-node), a
-      configurable orientation reference vector with a sensible default
+- [x] `linstatic`: 3D space-truss + Euler-Bernoulli beam elements
+      (axial + biaxial bending + torsion), variable dofs/node (3 or 6,
+      per-node), configurable beam orientation reference vector
 - [x] Canonical KV output format (`DISP.*` / `REACT.*`)
-- [x] Regression harness (`fem_regress`) with integrity-checked manifests
-      and both VERIFIED and deliberately-BORKED cases (13 cases: 4 truss,
-      2 beam, 2 modal, 5 borked)
-- [x] `fem_dofmap`: DOF numbering factored out of `linstatic` into a
-      shared unit, so a second solver can't number a model's dofs
-      differently
+- [x] Regression harness (`fem_regress`) with integrity-checked manifests,
+      VERIFIED and deliberately-BORKED cases, threaded stdout/stderr
+      capture (fixed a deadlock risk and, in fixing that, an exit-code
+      corruption bug the first fix introduced)
+- [x] `fem_dofmap`: DOF numbering factored out into a shared unit so two
+      solvers can't number a model's dofs differently
 - [x] `modal`: lumped-mass modal analysis via a from-scratch Jacobi
       eigensolver (`fem_eigen`) — the second solver, proving out the
       shared-library architecture for real (see `docs/modal.md`)
-- [x] 3D moment frame regression tests (L-shaped cantilever with
-      hand-verified reactions; a statically-indeterminate portal frame
-      cross-checked against NumPy) — no new element code needed, the
+- [x] 3D moment frame regression tests — no new element code needed, the
       beam element already models full moment continuity at shared nodes
 - [x] Load cases, freedom cases, and combinations (Strand7-style):
       multiple named load/constraint sets per model, solved together
       (one stiffness factorization per freedom case, reused across every
       load case's RHS), plus combinations as exact post-hoc linear
-      superposition. Fully backward compatible -- a legacy single-case
-      model's output is byte-identical to before. See `docs/model_format.md`.
-- [ ] Plate/shell elements, including a 2nd-order variant — substantial
-      scope on its own (shape functions, Gauss quadrature, Jacobian-mapped
-      B-matrix, membrane/bending coupling); planned as its own incremental
-      build (like truss -> beam), not started
-- [ ] A compact native format (Strand7-`.txt`-like: sectioned, tabular
-      rows) for both models and solver results, replacing JSON as the
-      primary format (JSON becomes an adaptor input) once real models
-      reach node/element counts where JSON's verbosity actually matters;
-      results filenames specified per-solver in the model file rather
-      than solvers only writing to stdout. Planned as its own dedicated
-      pivot, not started
+      superposition
+- [x] `linsparse`: element-by-element (matrix-free) PCG solver with a
+      persistent multithreaded worker pool. Correctness verified against
+      `linstatic` on every applicable regression case. Performance is
+      *not* yet a demonstrated win at any tested scale (threading
+      overhead dominated up to ~6,000 elements in testing), and plain
+      Jacobi preconditioning fails to converge on slender/bending-
+      dominated geometry where `linstatic` solves directly in
+      milliseconds -- both are documented honestly in `docs/linsparse.md`
+      rather than papered over. `fem_elements.ElementStiffnessFor`
+      factored out as a byproduct, removing a third near-duplicate of
+      the truss/beam dispatch that would otherwise have been needed
+- [ ] A stronger preconditioner for `linsparse` (incomplete Cholesky is
+      the natural next step) -- the real fix for the slender-geometry
+      convergence failure found above
+- [ ] Calibrating (or removing) `linsparse`'s thread-count threshold
+      against an actually-measured crossover point, rather than the
+      current conservative placeholder
+- [ ] Plate/shell elements — 1st-order (flat, linear) first, verified,
+      then 2nd-order; substantial scope on its own (shape functions,
+      Gauss quadrature, Jacobian-mapped B-matrix, membrane/bending
+      coupling); planned as its own incremental build (like truss ->
+      beam), not started
 - [ ] Adaptors for other ASCII formats (Strand7 `.txt` first candidate;
       see `docs/adaptors.md` — low priority for now, not started)
 - [ ] Rotary inertia for beam elements, so `modal` can handle a beam's
       rotational dofs when they're free rather than requiring them fixed
-- [ ] A third solver would be the next real test of the shared-library
-      pattern (nonlinear static? a sparse/iterative modal for larger
-      models?)

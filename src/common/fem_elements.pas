@@ -5,7 +5,7 @@ unit fem_elements;
 interface
 
 uses
-  fem_types, Math, SysUtils;
+  fem_types, fem_index, Math, SysUtils;
 
 type
   // TElemMatrix is fem_types.TDenseMatrix under another name for
@@ -28,6 +28,15 @@ function TrussStiffness3D(E, A, x1, y1, z1, x2, y2, z2: Double): TElemMatrix;
 // falling back to global X for near-vertical members).
 function BeamStiffness3D(E, G, A, Iy, Iz, J,
   x1, y1, z1, x2, y2, z2: Double; const RefVec: array of Double): TElemMatrix;
+
+// Model-aware dispatcher: builds the right element's global stiffness
+// matrix given a model and its lookup maps (material/property lookup, G
+// from E+nu, refVec handling all in one place). Every solver that needs
+// an element's stiffness goes through this rather than re-implementing
+// the truss-vs-beam dispatch itself -- linstatic, modal, and linsparse
+// all share this.
+function ElementStiffnessFor(const Model: TModel;
+  NodeIdx, MatIdx, PropIdx: TIntIntMap; const el: TElement): TElemMatrix;
 
 implementation
 
@@ -174,6 +183,37 @@ begin
     for jc := 1 to 12 do
       for k := 1 to 12 do
         Result[i][jc] := Result[i][jc] + T[k][i] * Kl[k][jc]; // T^T[i][k] = T[k][i]
+end;
+
+function ElementStiffnessFor(const Model: TModel;
+  NodeIdx, MatIdx, PropIdx: TIntIntMap; const el: TElement): TElemMatrix;
+var
+  prop: TProperty;
+  mat: TMaterial;
+  n1, n2: TNode;
+  G: Double;
+  refVec: array[0..2] of Double;
+begin
+  prop := Model.Properties[PropIdx[el.PropertyId]];
+  mat := Model.Materials[MatIdx[prop.MaterialId]];
+  n1 := Model.Nodes[NodeIdx[el.NodeIds[0]]];
+  n2 := Model.Nodes[NodeIdx[el.NodeIds[1]]];
+  if el.ElementType = 'truss' then
+    Result := TrussStiffness3D(mat.E, prop.Area, n1.X, n1.Y, n1.Z, n2.X, n2.Y, n2.Z)
+  else // 'beam' -- fem_validate guarantees no other type reaches here
+  begin
+    G := mat.E / (2.0 * (1.0 + mat.Nu));
+    if el.HasRefVec then
+    begin
+      refVec[0] := el.RefVec[0]; refVec[1] := el.RefVec[1]; refVec[2] := el.RefVec[2];
+    end
+    else
+    begin
+      refVec[0] := 0; refVec[1] := 0; refVec[2] := 0;
+    end;
+    Result := BeamStiffness3D(mat.E, G, prop.Area, prop.Iy, prop.Iz, prop.J,
+      n1.X, n1.Y, n1.Z, n2.X, n2.Y, n2.Z, refVec);
+  end;
 end;
 
 end.

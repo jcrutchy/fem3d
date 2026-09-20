@@ -3,11 +3,61 @@ program fem_regress;
 {$mode objfpc}{$H+}
 
 uses
+  {$IFDEF UNIX}cthreads,{$ENDIF}
   SysUtils, Classes, IniFiles, Process, Generics.Collections, fem_sha256;
 
 type
   TKVMap = specialize TDictionary<string, string>;
   TValMap = specialize TDictionary<string, Double>;
+
+  // Reads one pipe stream to EOF on its own thread. Two of these running
+  // concurrently (one per pipe) is the standard fix for the classic
+  // dual-pipe problem: alternating blocking reads between stdout and
+  // stderr can deadlock (stuck reading one while the child blocks writing
+  // a full buffer to the other), but polling via Proc.Running to avoid
+  // that blocking is its own hazard -- on at least this FPC/platform
+  // combination, querying Running on an already-exited process appears to
+  // reap it in a way that leaves Proc.ExitStatus holding the raw,
+  // unshifted wait() status (observed as exit codes like 768 instead of
+  // 3). Two independent blocking readers sidestep both problems: no
+  // alternation to deadlock on, and Running/WaitOnExit are only ever
+  // touched once, after both pipes have hit EOF on their own.
+  TPipeReaderThread = class(TThread)
+  private
+    FSource: TStream;
+    FResult: TMemoryStream;
+  protected
+    procedure Execute; override;
+  public
+    constructor Create(ASource: TStream);
+    destructor Destroy; override;
+    property ResultStream: TMemoryStream read FResult;
+  end;
+
+constructor TPipeReaderThread.Create(ASource: TStream);
+begin
+  inherited Create(True);
+  FSource := ASource;
+  FResult := TMemoryStream.Create;
+  FreeOnTerminate := False;
+end;
+
+destructor TPipeReaderThread.Destroy;
+begin
+  FResult.Free;
+  inherited Destroy;
+end;
+
+procedure TPipeReaderThread.Execute;
+var
+  buf: array[0..4095] of Byte;
+  n: LongInt;
+begin
+  repeat
+    n := FSource.Read(buf[0], SizeOf(buf));
+    if n > 0 then FResult.WriteBuffer(buf[0], n);
+  until n <= 0;
+end;
 
 var
   FS: TFormatSettings;
@@ -69,64 +119,14 @@ function RunSolver(const Exe, ModelPath: string; out ExitCode: Integer;
   out StdOutText, StdErrText: string): Boolean;
 var
   Proc: TProcess;
-  OutStream, ErrStream: TMemoryStream;
-  buf: array[0..4095] of Byte;
-
-  procedure DrainAll;
-  var
-    n1, n2, toRead: LongInt;
-  begin
-    // Drain both pipes non-blockingly while the process is actively executing
-    while Proc.Running do
-    begin
-      n1 := Proc.Output.NumBytesAvailable;
-      if n1 > 0 then
-      begin
-        toRead := n1;
-        if toRead > SizeOf(buf) then toRead := SizeOf(buf);
-        n1 := Proc.Output.Read(buf[0], toRead);
-        if n1 > 0 then OutStream.WriteBuffer(buf[0], n1);
-      end
-      else
-        n1 := 0;
-
-      n2 := Proc.Stderr.NumBytesAvailable;
-      if n2 > 0 then
-      begin
-        toRead := n2;
-        if toRead > SizeOf(buf) then toRead := SizeOf(buf);
-        n2 := Proc.Stderr.Read(buf[0], toRead);
-        if n2 > 0 then ErrStream.WriteBuffer(buf[0], n2);
-      end
-      else
-        n2 := 0;
-
-      if (n1 = 0) and (n2 = 0) then
-        Sleep(5);
-    end;
-
-    // Process has exited; write handles are closed so reading cannot block.
-    // Drain any remaining buffered bytes until EOF.
-    repeat
-      n1 := Proc.Output.Read(buf[0], SizeOf(buf));
-      if n1 > 0 then OutStream.WriteBuffer(buf[0], n1);
-    until n1 <= 0;
-
-    repeat
-      n2 := Proc.Stderr.Read(buf[0], SizeOf(buf));
-      if n2 > 0 then ErrStream.WriteBuffer(buf[0], n2);
-    until n2 <= 0;
-  end;
-
+  OutThread, ErrThread: TPipeReaderThread;
 begin
   Result := True;
   Proc := TProcess.Create(nil);
-  OutStream := TMemoryStream.Create;
-  ErrStream := TMemoryStream.Create;
   try
     Proc.Executable := Exe;
     Proc.Parameters.Add(ModelPath);
-    Proc.Options := [poUsePipes];
+    Proc.Options := [poUsePipes]; // keep stdout/stderr separate so BORKED cases can check stderr text
     try
       Proc.Execute;
     except
@@ -138,14 +138,25 @@ begin
         Exit;
       end;
     end;
-    DrainAll;
-    Proc.WaitOnExit;
-    ExitCode := Proc.ExitStatus;
-    SetString(StdOutText, PAnsiChar(OutStream.Memory), OutStream.Size);
-    SetString(StdErrText, PAnsiChar(ErrStream.Memory), ErrStream.Size);
+
+    OutThread := TPipeReaderThread.Create(Proc.Output);
+    ErrThread := TPipeReaderThread.Create(Proc.Stderr);
+    try
+      OutThread.Start;
+      ErrThread.Start;
+      OutThread.WaitFor;
+      ErrThread.WaitFor;
+
+      Proc.WaitOnExit;
+      ExitCode := Proc.ExitStatus;
+
+      SetString(StdOutText, PAnsiChar(OutThread.ResultStream.Memory), OutThread.ResultStream.Size);
+      SetString(StdErrText, PAnsiChar(ErrThread.ResultStream.Memory), ErrThread.ResultStream.Size);
+    finally
+      OutThread.Free;
+      ErrThread.Free;
+    end;
   finally
-    OutStream.Free;
-    ErrStream.Free;
     Proc.Free;
   end;
 end;
@@ -206,7 +217,7 @@ begin
     Status := UpperCase(Ini.ReadString('CASE', 'Status', 'VERIFIED'));
     SolverName := Ini.ReadString('CASE', 'Solver', 'linstatic');
 
-    ModelRel := Ini.ReadString('FILES', 'Model', 'model.json');
+    ModelRel := Ini.ReadString('FILES', 'Model', 'model.fem');
     ModelPath := CaseDir + ModelRel;
     ExpectModelHash := LowerCase(Ini.ReadString('FILES', 'ModelSHA256', ''));
     ExpectManifestHash := LowerCase(Ini.ReadString('FILES', 'ManifestSHA256', ''));
@@ -351,7 +362,7 @@ begin
   CaseDir := ExtractFilePath(ExpandFileName(ManifestPath));
   Ini := TMemIniFile.Create(ManifestPath);
   try
-    ModelRel := Ini.ReadString('FILES', 'Model', 'model.json');
+    ModelRel := Ini.ReadString('FILES', 'Model', 'model.fem');
     ModelPath := CaseDir + ModelRel;
   finally
     Ini.Free;

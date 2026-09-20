@@ -51,6 +51,8 @@ type
 
   TSolverParams = record
     Tolerance: Double;
+    HasResultsFile: Boolean;
+    ResultsFile: string; // if set, solver writes results here instead of stdout
   end;
 
   TNodeArray       = array of TNode;

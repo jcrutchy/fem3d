@@ -1,0 +1,86 @@
+object AnalysisManagerForm: TAnalysisManagerForm
+  Left = 0
+  Top = 0
+  Caption = 'Analysis Manager'
+  ClientHeight = 560
+  ClientWidth = 820
+  Position = poScreenCenter
+  OnShow = FormShow
+  object CasesList: TListBox
+    Left = 8
+    Top = 8
+    Width = 804
+    Height = 360
+    Anchors = [akLeft, akTop, akRight, akBottom]
+    TabOrder = 0
+    OnDblClick = CasesListDblClick
+  end
+  object SummaryMemo: TMemo
+    Left = 8
+    Top = 376
+    Width = 804
+    Height = 120
+    Anchors = [akLeft, akRight, akBottom]
+    ReadOnly = True
+    ScrollBars = ssVertical
+    TabOrder = 1
+  end
+  object ButtonsPanel: TPanel
+    Left = 8
+    Top = 504
+    Width = 804
+    Height = 48
+    Anchors = [akLeft, akRight, akBottom]
+    BevelOuter = bvNone
+    TabOrder = 2
+    object NewButton: TButton
+      Left = 0
+      Top = 8
+      Width = 80
+      Caption = 'New'
+      TabOrder = 0
+      OnClick = NewButtonClick
+    end
+    object EditButton: TButton
+      Left = 88
+      Top = 8
+      Width = 80
+      Caption = 'Edit'
+      TabOrder = 1
+      OnClick = EditButtonClick
+    end
+    object DuplicateButton: TButton
+      Left = 176
+      Top = 8
+      Width = 90
+      Caption = 'Duplicate'
+      TabOrder = 2
+      OnClick = DuplicateButtonClick
+    end
+    object DeleteButton: TButton
+      Left = 274
+      Top = 8
+      Width = 80
+      Caption = 'Delete'
+      TabOrder = 3
+      OnClick = DeleteButtonClick
+    end
+    object UseSelectedButton: TButton
+      Left = 582
+      Top = 8
+      Width = 110
+      Caption = 'Use selected'
+      TabOrder = 4
+      OnClick = UseSelectedButtonClick
+    end
+    object CloseButton: TButton
+      Left = 700
+      Top = 8
+      Width = 88
+      Cancel = True
+      Caption = 'Close'
+      TabOrder = 5
+      OnClick = CloseButtonClick
+    end
+  end
+end

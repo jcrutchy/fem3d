@@ -1,36 +1,17 @@
-# FEM Suite — Model File Format (v0)
+# FEM Suite — Model Schema (v0)
 
-The model file is JSON. It is solver-agnostic: `fem_validate` is shared by
-every solver, and each solver only looks at the sections/element types it
-understands.
+This document covers what each field *means* — solver-agnostic, and
+format-agnostic (the same fields and semantics apply whether the model
+is written in the native `.fem` format or converted from JSON via
+`adapt_json`). For the actual wire syntax, see `docs/native_format.md`.
+`fem_validate` is shared by every solver, and each solver only looks at
+the sections/element types it understands.
 
-```json
-{
-  "solver": "linstatic",
-  "units": "free-form label, e.g. SI (N, m, Pa) -- informational only for now",
-  "nodes": [
-    { "id": 1, "x": 0.0, "y": 0.0, "z": 0.0 }
-  ],
-  "materials": [
-    { "id": 1, "E": 210.0e9 }
-  ],
-  "properties": [
-    { "id": 1, "type": "truss", "material": 1, "area": 0.001 }
-  ],
-  "elements": [
-    { "id": 1, "type": "truss", "nodes": [1, 2], "property": 1 }
-  ],
-  "constraints": [
-    { "node": 1, "dof": "x", "value": 0.0 }
-  ],
-  "loads": [
-    { "node": 2, "dof": "x", "value": 1000.0 }
-  ],
-  "solverParams": {
-    "tolerance": 1e-9
-  }
-}
-```
+A model has: nodes, materials, properties, elements, one or more freedom
+cases (named constraint sets), one or more load cases (named load sets),
+optional combinations (named linear combinations of load case results),
+and solver params. See `docs/native_format.md` for a complete worked
+example in the actual file syntax.
 
 ## Fields
 
@@ -117,7 +98,7 @@ special cases while every solver still gets a consistent, named error
 |------|--------------------------------------------|
 | 0    | Success                                     |
 | 1    | Usage error (bad/missing CLI args)          |
-| 2    | Could not load the model file (I/O, bad JSON) |
+| 2    | Could not load the model file (I/O, malformed input)  |
 | 3    | Model failed validation                     |
 | 4    | Solver-level failure (e.g. singular system) |
 
@@ -129,50 +110,30 @@ term, since the same structure is sometimes analyzed under different
 support conditions). Every solver solves *every load case against every
 freedom case that applies*, and -- for `linstatic` -- evaluates any
 **combinations** (named linear combinations of load case results) too, all
-in one invocation.
+in one invocation. See `docs/native_format.md` for the actual
+`[FREEDOMCASE ...]` / `[LOADCASE ...]` / `[COMBINATION ...]` syntax.
 
-```json
-{
-  "freedomCases": [
-    { "id": "FC1", "name": "Service supports", "constraints": [ ... ] }
-  ],
-  "loadCases": [
-    { "id": "DL", "name": "Dead load", "loads": [ ... ] },
-    { "id": "LL", "name": "Live load", "loads": [ ... ] }
-  ],
-  "combinations": [
-    {
-      "id": "COMB1", "name": "1.2DL + 1.6LL", "freedomCase": "FC1",
-      "terms": [
-        { "loadCase": "DL", "factor": 1.2 },
-        { "loadCase": "LL", "factor": 1.6 }
-      ]
-    }
-  ]
-}
-```
+**Backward compatible by construction.** A model using a single unnamed
+freedom case and load case (no repeated `[FREEDOMCASE ...]`/
+`[LOADCASE ...]` sections) is normalized by the loader into one freedom
+case and one load case, both named `"default"` -- every model from
+before this feature existed still works unchanged, and (see "Output"
+below) still produces byte-identical output.
 
-**Backward compatible by construction.** A model using the original flat
-`"constraints"` / `"loads"` arrays (no `"freedomCases"`/`"loadCases"` keys)
-is normalized by the loader into a single freedom case and a single load
-case, both named `"default"` -- every model from before this feature
-existed still works unchanged, and (see "Output" below) still produces
-byte-identical output.
-
-- **freedomCases[].id / name / constraints** -- `id` must be unique;
-  `constraints` is the same array you'd put in the flat `"constraints"`
-  form. Each freedom case is validated independently (needs at least one
-  constraint, etc.) -- see `docs/model_format.md`'s Validation section.
-- **loadCases[].id / name / loads** -- likewise, `id` unique, `loads` same
-  shape as the flat `"loads"` form.
-- **combinations[].id / name / freedomCase / terms** -- `freedomCase` is
-  the id of the freedom case this combination is evaluated within
-  (required if the model has more than one freedom case; resolved to the
-  model's sole freedom case automatically if there's only one). `terms`
-  is a list of `{ "loadCase": <id>, "factor": <number> }`; the
-  combination's result is the weighted sum of those load cases' results,
-  evaluated at every displacement and reaction component -- valid because
-  linear-static analysis is linear (pure superposition), so this is exact
+- **A freedom case** -- id (the section's argument) must be unique;
+  its constraints are the same shape as a single flat constraint set.
+  Each freedom case is validated independently (needs at least one
+  constraint, etc.) -- see "Validation" above.
+- **A load case** -- likewise, id unique, loads same shape as a flat
+  load set.
+- **A combination** -- `FreedomCase` is the id of the freedom case this
+  combination is evaluated within (required if the model has more than
+  one freedom case; resolved to the model's sole freedom case
+  automatically if there's only one). `Terms` is a list of
+  `<loadCaseId>:<factor>` pairs; the combination's result is the
+  weighted sum of those load cases' results, evaluated at every
+  displacement and reaction component -- valid because linear-static
+  analysis is linear (pure superposition), so this is exact
   post-processing arithmetic, not a new solve.
 
 **Performance note, not just a formality.** Stiffness assembly and
@@ -190,7 +151,7 @@ separator regardless of locale:
 
 ```
 # FreePascal FEM Suite - linstatic (skyline linear-static solver)
-# model=model.json
+# model=model.fem
 # nodes=2 elements=1 freedom_cases=1 load_cases=1 combinations=0
 DISP.1.x=0.0000000000000000E+000
 DISP.1.y=0.0000000000000000E+000
@@ -208,12 +169,16 @@ tools parse against -- `fem_regress` (see `docs/regression_testing.md`),
 and any future pretty-printer or plotting tool. Redirect as usual:
 
 ```
-linstatic model.json > results.txt
+linstatic model.fem > results.txt
 ```
+
+Or name a results file directly in the model itself
+(`[SOLVERPARAMS].ResultsFile=...`, see `docs/native_format.md`) rather
+than relying on shell redirection.
 
 The model argument can also be `-`, reading the model from stdin instead
 of a file -- this is what lets an adaptor (see `docs/adaptors.md`) feed a
-solver directly: `adapt_strand7 in.txt | linstatic -`.
+solver directly: `adapt_json old.json | linstatic -`.
 
 Set `FEM_DEBUG=1` in the environment to also dump the DOF numbering map,
 the dense free-free stiffness matrix, and the assembled RHS to stderr —
@@ -241,19 +206,10 @@ there's more than one freedom case, bare `MODE.<n>...` otherwise.
   substantial scope (shape functions, Gauss quadrature, a Jacobian-mapped
   B-matrix, membrane/bending coupling, drilling-dof stabilization); to be
   built and verified incrementally like beam was (truss -> beam), not in
-  one pass. Not started.
-- A compact native format (input model, and solver results), closer to
-  Strand7's `.txt` layout -- sectioned, tabular rows rather than
-  once-per-record JSON objects, since JSON gets prohibitively verbose at
-  the node/element counts a real model reaches. JSON becomes an adaptor
-  input rather than the primary format once this lands; solver results
-  gain the same treatment, plus letting the model file itself name a
-  results file per solver-params section rather than solvers only ever
-  writing to stdout. Not started -- a real pivot, planned as its own
-  dedicated increment rather than folded into another change.
+  one pass. 1st-order (flat, linear) first, 2nd-order after. Not started.
 - Adaptors for other ASCII input formats (Strand7 `.txt`, etc.) — see
-  `docs/adaptors.md`. Solvers themselves stay on the canonical native
-  format; adaptors convert into it upstream. Low priority for now.
+  `docs/adaptors.md`. `adapt_json` (JSON -> native) exists; a
+  Strand7-format adaptor is low priority for now, not started.
 - Additional solvers as separate executables against the same model
   format and the same `fem_skyline`/`fem_validate` units: nonlinear
   static, etc.

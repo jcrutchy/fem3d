@@ -11,7 +11,7 @@ hashes, it re-runs every case and reports pass/fail.
 ```
 tests/regression/<ID>_<slug>/
   manifest.ini
-  model.json
+  model.fem
 ```
 
 `<ID>` is free-form (numeric ranges are just a convention -- this repo
@@ -29,8 +29,8 @@ Solver=linstatic
 Verification=Manual calculation
 
 [FILES]
-Model=model.json
-ModelSHA256=<sha256 of model.json>
+Model=model.fem
+ModelSHA256=<sha256 of model.fem>
 ManifestSHA256=<sha256 of this file, computed with this field blanked>
 
 [EXPECTATIONS]
@@ -49,7 +49,7 @@ ReactionFY=REACT.1.y
   is expected to *reject* -- these matter just as much, because a solver
   that silently "succeeds" on a bad model is worse than one that's merely
   slow or incomplete.
-- **`[FILES].ModelSHA256`** — hash of `model.json` as it stood when the
+- **`[FILES].ModelSHA256`** — hash of `model.fem` as it stood when the
   expected values were verified. If the model file changes later (even a
   whitespace edit) without the manifest being regenerated, the hash
   mismatches and the case fails loudly rather than silently comparing
@@ -75,7 +75,7 @@ ReactionFY=REACT.1.y
 
 ## Authoring a case
 
-1. Build `model.json`, work out the expected values by hand or an
+1. Build `model.fem`, work out the expected values by hand or an
    independent tool, write `[CASE]`/`[FILES]`/`[EXPECTATIONS]`/`[MAP]`,
    leaving `ModelSHA256`/`ManifestSHA256` blank.
 2. `fem_regress tests/regression/<case>/manifest.ini --update-hashes`
@@ -94,10 +94,18 @@ fem_regress tests/regression --bin ./bin  # solver executables live here (defaul
 Exit code is 0 iff every case passed -- suitable for a CI gate once/if
 there's a CI.
 
-## Known limitation
+## Solver output capture
 
-`fem_regress` reads a solver's stdout/stderr via two OS pipes without a
-separate thread per pipe. Fine for the small outputs these solvers
-produce; if a future solver's output grows large enough to fill an OS
-pipe buffer, this needs revisiting (threaded readers, or a temp-file
-based capture) to avoid a deadlock.
+`fem_regress` reads a solver's stdout and stderr on two independent
+threads (one blocking read-to-EOF per pipe), then calls `WaitOnExit`
+once both have finished. This is deliberate, not incidental: alternating
+blocking reads between the two pipes can deadlock (stuck reading one
+while the child blocks writing a full buffer to the other), and the
+seemingly-obvious non-blocking-poll-via-`Proc.Running` alternative has
+its own hazard on at least this FPC/platform combination -- querying
+`Running` on an already-exited process appears to reap it in a way that
+leaves `Proc.ExitStatus` holding the raw, unshifted `wait()` status
+(surfacing as exit codes like 768 instead of 3). Two independent threads
+sidestep both: no alternation to deadlock on, and `Running`/`WaitOnExit`
+are only ever touched once, after both pipes have already hit EOF on
+their own.

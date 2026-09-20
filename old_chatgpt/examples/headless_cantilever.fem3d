@@ -1,0 +1,18 @@
+FEM3D 0.7
+MATERIAL 1 "Structural steel" 2.0e11 0.3 7850
+SECTION 1 "Demo section" 0.01 8.0e-6 3.0e-6 1.0e-6
+GROUP 1 "Demo beam"
+LOADCASE 1 "LC1 - tip load"
+NODE 1 0 0 0 1 1 1 1 1 1
+NODE 2 5 0 0 0 0 0 0 0 0
+ELEMENT 1 BEAM3D 1 1 0 1 1 2
+LOAD 1 2 1 0 0 -10000 0 0 0
+[ANALYSIS_CASE 1]
+Name=Linear Static - LC1
+LoadCase=1
+Type=LINEAR_STATIC
+ResultID=default
+MatrixStorage=DENSE
+Tolerance=1E-10
+Solver=ReferenceDenseLDLT
+[END_ANALYSIS_CASE]

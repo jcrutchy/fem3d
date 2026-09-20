@@ -1,0 +1,316 @@
+object AnalysisConfigForm: TAnalysisConfigForm
+  Left = 0
+  Top = 0
+  Caption = 'Analysis Configuration'
+  ClientHeight = 560
+  ClientWidth = 760
+  Position = poScreenCenter
+  OnShow = FormShow
+  object Pages: TPageControl
+    Left = 8
+    Top = 8
+    Width = 744
+    Height = 500
+    ActivePage = AnalysisPage
+    Align = alTop
+    TabOrder = 0
+    object AnalysisPage: TTabSheet
+      Caption = 'Analysis'
+      object AnalysisNameLabel: TLabel
+        Left = 20
+        Top = 24
+        Caption = 'Analysis name'
+      end
+      object AnalysisNameEdit: TEdit
+        Left = 180
+        Top = 20
+        Width = 430
+        TabOrder = 0
+      end
+      object LoadCaseLabel: TLabel
+        Left = 20
+        Top = 62
+        Caption = 'Load case ID'
+      end
+      object LoadCaseEdit: TEdit
+        Left = 180
+        Top = 58
+        Width = 120
+        TabOrder = 1
+      end
+      object AnalysisTypeLabel: TLabel
+        Left = 20
+        Top = 100
+        Caption = 'Analysis type'
+      end
+      object AnalysisTypeValue: TLabel
+        Left = 180
+        Top = 100
+        Caption = 'LinearStatic'
+      end
+      object SolverLabel: TLabel
+        Left = 20
+        Top = 142
+        Caption = 'Solver boundary'
+      end
+      object SolverCombo: TComboBox
+        Left = 180
+        Top = 138
+        Width = 430
+        Style = csDropDownList
+        TabOrder = 2
+      end
+      object MatrixStorageLabel: TLabel
+        Left = 20
+        Top = 180
+        Caption = 'Matrix storage'
+      end
+      object MatrixStorageCombo: TComboBox
+        Left = 180
+        Top = 176
+        Width = 180
+        Style = csDropDownList
+        TabOrder = 3
+      end
+      object PivotToleranceLabel: TLabel
+        Left = 20
+        Top = 218
+        Caption = 'Pivot tolerance'
+      end
+      object PivotToleranceEdit: TEdit
+        Left = 180
+        Top = 214
+        Width = 180
+        TabOrder = 4
+      end
+      object ResidualToleranceLabel: TLabel
+        Left = 20
+        Top = 256
+        Caption = 'Residual tolerance'
+      end
+      object ResidualToleranceEdit: TEdit
+        Left = 180
+        Top = 252
+        Width = 180
+        TabOrder = 5
+      end
+      object EquilibriumCheck: TCheckBox
+        Left = 20
+        Top = 294
+        Caption = 'Equilibrium check'
+        TabOrder = 6
+      end
+      object EnergyCheck: TCheckBox
+        Left = 20
+        Top = 322
+        Caption = 'Energy balance check'
+        TabOrder = 7
+      end
+      object RecoverForcesCheck: TCheckBox
+        Left = 20
+        Top = 350
+        Caption = 'Recover element forces'
+        TabOrder = 8
+      end
+      object StoreDiagnosticsCheck: TCheckBox
+        Left = 20
+        Top = 378
+        Caption = 'Store solver diagnostics'
+        TabOrder = 9
+      end
+    end
+    object SolverPage: TTabSheet
+      Caption = 'Solver / Numerical'
+      object EigenvalueCountLabel: TLabel
+        Left = 20
+        Top = 24
+        Caption = 'Eigenvalues requested'
+      end
+      object EigenvalueCountEdit: TEdit
+        Left = 220
+        Top = 20
+        Width = 120
+        TabOrder = 0
+      end
+      object SpectralShiftLabel: TLabel
+        Left = 20
+        Top = 62
+        Caption = 'Spectral shift'
+      end
+      object SpectralShiftEdit: TEdit
+        Left = 220
+        Top = 58
+        Width = 180
+        TabOrder = 1
+      end
+      object EigenToleranceLabel: TLabel
+        Left = 20
+        Top = 100
+        Caption = 'Eigen tolerance'
+      end
+      object EigenToleranceEdit: TEdit
+        Left = 220
+        Top = 96
+        Width = 180
+        TabOrder = 2
+      end
+      object MaximumIterationsLabel: TLabel
+        Left = 20
+        Top = 138
+        Caption = 'Maximum iterations'
+      end
+      object MaximumIterationsEdit: TEdit
+        Left = 220
+        Top = 134
+        Width = 120
+        TabOrder = 3
+      end
+      object NormalizeModesCheck: TCheckBox
+        Left = 20
+        Top = 176
+        Caption = 'Normalize mode shapes'
+        TabOrder = 4
+      end
+      object StoreModesCheck: TCheckBox
+        Left = 20
+        Top = 204
+        Caption = 'Store mode shapes'
+        TabOrder = 5
+      end
+      object SymmetryCheck: TCheckBox
+        Left = 20
+        Top = 232
+        Caption = 'Check matrix symmetry'
+        TabOrder = 6
+      end
+      object InitialStepsLabel: TLabel
+        Left = 20
+        Top = 270
+        Caption = 'Initial load steps'
+      end
+      object InitialStepsEdit: TEdit
+        Left = 220
+        Top = 266
+        Width = 120
+        TabOrder = 7
+      end
+      object MaximumIterationsStepLabel: TLabel
+        Left = 20
+        Top = 308
+        Caption = 'Maximum iterations / step'
+      end
+      object MaximumIterationsStepEdit: TEdit
+        Left = 220
+        Top = 304
+        Width = 120
+        TabOrder = 8
+      end
+      object ForceToleranceLabel: TLabel
+        Left = 20
+        Top = 346
+        Caption = 'Force tolerance'
+      end
+      object ForceToleranceEdit: TEdit
+        Left = 220
+        Top = 342
+        Width = 180
+        TabOrder = 9
+      end
+      object DisplacementToleranceLabel: TLabel
+        Left = 20
+        Top = 384
+        Caption = 'Displacement tolerance'
+      end
+      object DisplacementToleranceEdit: TEdit
+        Left = 220
+        Top = 380
+        Width = 180
+        TabOrder = 10
+      end
+      object MinimumStepLabel: TLabel
+        Left = 430
+        Top = 270
+        Caption = 'Minimum load step'
+      end
+      object MinimumStepEdit: TEdit
+        Left = 570
+        Top = 266
+        Width = 120
+        TabOrder = 11
+      end
+      object MaximumStepLabel: TLabel
+        Left = 430
+        Top = 308
+        Caption = 'Maximum load step'
+      end
+      object MaximumStepEdit: TEdit
+        Left = 570
+        Top = 304
+        Width = 120
+        TabOrder = 12
+      end
+      object MaximumCutbacksLabel: TLabel
+        Left = 430
+        Top = 346
+        Caption = 'Maximum cutbacks'
+      end
+      object MaximumCutbacksEdit: TEdit
+        Left = 570
+        Top = 342
+        Width = 120
+        TabOrder = 13
+      end
+      object LineSearchCheck: TCheckBox
+        Left = 430
+        Top = 380
+        Caption = 'Line search'
+        TabOrder = 14
+      end
+      object StoreHistoryCheck: TCheckBox
+        Left = 430
+        Top = 408
+        Caption = 'Store iteration history'
+        TabOrder = 15
+      end
+    end
+    object DiagnosticsPage: TTabSheet
+      Caption = 'Output / Diagnostics'
+      object DiagnosticText: TMemo
+        Left = 12
+        Top = 12
+        Width = 708
+        Height = 440
+        Align = alClient
+        ReadOnly = True
+        ScrollBars = ssVertical
+        TabOrder = 0
+      end
+    end
+  end
+  object ButtonsPanel: TPanel
+    Left = 8
+    Top = 516
+    Width = 744
+    Height = 36
+    BevelOuter = bvNone
+    TabOrder = 1
+    object SaveButton: TButton
+      Left = 568
+      Top = 4
+      Width = 80
+      Caption = 'Save'
+      Default = True
+      TabOrder = 0
+      OnClick = SaveButtonClick
+    end
+    object CancelButton: TButton
+      Left = 656
+      Top = 4
+      Width = 80
+      Cancel = True
+      Caption = 'Cancel'
+      ModalResult = 2
+      TabOrder = 1
+    end
+  end
+end

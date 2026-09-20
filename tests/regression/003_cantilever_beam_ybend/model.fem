@@ -1,0 +1,37 @@
+# FreePascal FEM Suite - native model format
+[HEADER]
+Solver=linstatic
+Units=SI (N, m, Pa, rad)
+
+[NODES]
+# id, x, y, z
+1, 0, 0, 0
+2, 3, 0, 0
+
+[MATERIALS]
+# id, E, nu, rho
+1, 200000000000, 0.3, -
+
+[PROPERTIES]
+# id, type, material, area[, Iy, Iz, J]
+1, beam, 1, 0.005, 0.00004, 0.00008, 0.00002
+
+[ELEMENTS]
+# id, type, node1, node2, property[, refX, refY, refZ]
+1, beam, 1, 2, 1
+
+[FREEDOMCASE default]
+# node, dof, value
+1, x, 0
+1, y, 0
+1, z, 0
+1, rx, 0
+1, ry, 0
+1, rz, 0
+
+[LOADCASE default]
+# node, dof, value
+2, y, -1000
+
+[SOLVERPARAMS]
+Tolerance=1E-9

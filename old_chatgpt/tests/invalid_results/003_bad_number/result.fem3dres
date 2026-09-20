@@ -1,0 +1,5 @@
+FEM3D_RESULT 0.7
+Status=OK
+DOFCount=12
+[DISPLACEMENTS]
+9 definitely-not-a-number

@@ -1,0 +1,356 @@
+unit FastFEAMath;
+
+{$mode objfpc}{$H+}
+{$asmMode intel}
+
+interface
+
+uses
+  SysUtils;
+
+type
+  PDouble = ^Double;
+  PSizeInt = ^SizeInt;
+
+  // 64-byte Aligned Dense Vector
+  TDenseVector = record
+    Size: SizeInt;
+    Data: PDouble;
+    RawPtr: Pointer;
+  end;
+
+  // 64-byte Aligned Dense Row-Major Matrix
+  TDenseMatrix = record
+    Rows, Cols: SizeInt;
+    Data: PDouble;
+    RawPtr: Pointer;
+  end;
+
+  // Compressed Sparse Row (CSR) Sparse Matrix format
+  TCSRMatrix = record
+    Rows, Cols: SizeInt;
+    NNZ: SizeInt;        // Number of non-zero entries
+    Values: PDouble;     // Size: NNZ
+    ColIdx: PSizeInt;    // Size: NNZ
+    RowPtr: PSizeInt;    // Size: Rows + 1
+    RawVal: Pointer;
+    RawCol: Pointer;
+    RawRow: Pointer;
+  end;
+
+// Memory Management
+function InitVector(Size: SizeInt): TDenseVector;
+procedure FreeVector(var V: TDenseVector);
+function InitCSRMatrix(Rows, Cols, NNZ: SizeInt): TCSRMatrix;
+procedure FreeCSRMatrix(var A: TCSRMatrix);
+
+// High-Performance Assembly Kernels
+function VectorDot(constref V1, V2: TDenseVector): Double;
+procedure VectorAXPY(Alpha: Double; constref X: TDenseVector; var Y: TDenseVector);
+procedure VectorCopy(constref Src: TDenseVector; var Dst: TDenseVector);
+procedure VectorScale(Alpha: Double; var V: TDenseVector);
+procedure CSR_SpMV(constref A: TCSRMatrix; constref X: TDenseVector; var Y: TDenseVector);
+
+// FEA Sparse Linear Solver
+function SolveConjugateGradient(constref A: TCSRMatrix; constref B: TDenseVector; 
+  var X: TDenseVector; MaxIter: Integer = 1000; Tol: Double = 1e-8): Integer;
+
+implementation
+
+// --- 64-Byte Aligned Memory Allocator ---
+
+function AllocAligned(Bytes: SizeInt; out RawPtr: Pointer): Pointer;
+var
+  Raw: PtrUInt;
+  Aligned: PtrUInt;
+begin
+  GetMem(RawPtr, Bytes + 63);
+  Raw := PtrUInt(RawPtr);
+  Aligned := (Raw + 63) and not PtrUInt(63);
+  Result := Pointer(Aligned);
+end;
+
+procedure FreeAligned(var RawPtr: Pointer);
+begin
+  if RawPtr <> nil then
+  begin
+    FreeMem(RawPtr);
+    RawPtr := nil;
+  end;
+end;
+
+// --- Data Structure Initialization ---
+
+function InitVector(Size: SizeInt): TDenseVector;
+begin
+  Result.Size := Size;
+  Result.Data := PDouble(AllocAligned(Size * SizeOf(Double), Result.RawPtr));
+  FillChar(Result.Data^, Size * SizeOf(Double), 0);
+end;
+
+procedure FreeVector(var V: TDenseVector);
+begin
+  FreeAligned(V.RawPtr);
+  V.Data := nil;
+  V.Size := 0;
+end;
+
+function InitCSRMatrix(Rows, Cols, NNZ: SizeInt): TCSRMatrix;
+begin
+  Result.Rows := Rows;
+  Result.Cols := Cols;
+  Result.NNZ := NNZ;
+  Result.Values := PDouble(AllocAligned(NNZ * SizeOf(Double), Result.RawVal));
+  Result.ColIdx := PSizeInt(AllocAligned(NNZ * SizeOf(SizeInt), Result.RawCol));
+  Result.RowPtr := PSizeInt(AllocAligned((Rows + 1) * SizeOf(SizeInt), Result.RawRow));
+  FillChar(Result.Values^, NNZ * SizeOf(Double), 0);
+  FillChar(Result.ColIdx^, NNZ * SizeOf(SizeInt), 0);
+  FillChar(Result.RowPtr^, (Rows + 1) * SizeOf(SizeInt), 0);
+end;
+
+procedure FreeCSRMatrix(var A: TCSRMatrix);
+begin
+  FreeAligned(A.RawVal);
+  FreeAligned(A.RawCol);
+  FreeAligned(A.RawRow);
+  A.Values := nil;
+  A.ColIdx := nil;
+  A.RowPtr := nil;
+  A.Rows := 0; A.Cols := 0; A.NNZ := 0;
+end;
+
+// --- Intel Assembly Kernels (AVX2 + FMA) ---
+
+{ Computes Double-Precision Dot Product: Res = V1 . V2 }
+function VectorDot(constref V1, V2: TDenseVector): Double;
+var
+  Len: SizeInt;
+  P1, P2: PDouble;
+  Res: Double;
+begin
+  Len := V1.Size;
+  P1 := V1.Data;
+  P2 := V2.Data;
+  Res := 0.0;
+
+  asm
+    mov     rsi, P1
+    mov     rdi, P2
+    mov     rcx, Len
+
+    vxorpd  ymm0, ymm0, ymm0     // Accumulator register
+
+    cmp     rcx, 4
+    jl      .L_dot_tail
+
+  .L_dot_loop4:
+    vmovapd ymm1, [rsi]         // Aligned 256-bit load (4 doubles)
+    vmovapd ymm2, [rdi]
+    vfmadd231pd ymm0, ymm1, ymm2 // ymm0 += ymm1 * ymm2 (FMA)
+    add     rsi, 32
+    add     rdi, 32
+    sub     rcx, 4
+    cmp     rcx, 4
+    jge     .L_dot_loop4
+
+  .L_dot_tail:
+    // Reduce YMM0 (4 x 64-bit float) to scalar XMM0
+    vextractf128 xmm1, ymm0, 1
+    vaddpd  xmm0, xmm0, xmm1
+    vhaddpd xmm0, xmm0, xmm0
+    vmovsd  Res, xmm0
+
+    // Process leftover elements (< 4)
+    test    rcx, rcx
+    jz      .L_dot_done
+
+  .L_dot_tail_loop:
+    movsd   xmm1, [rsi]
+    movsd   xmm2, [rdi]
+    mulsd   xmm1, xmm2
+    addsd   xmm0, xmm1
+    add     rsi, 8
+    add     rdi, 8
+    dec     rcx
+    jnz     .L_dot_tail_loop
+
+    vmovsd  Res, xmm0
+
+  .L_dot_done:
+    vzeroupper
+  end;
+
+  Result := Res;
+end;
+
+{ Computes Vector AXPY: Y = Y + Alpha * X }
+procedure VectorAXPY(Alpha: Double; constref X: TDenseVector; var Y: TDenseVector);
+var
+  Len: SizeInt;
+  PX, PY: PDouble;
+begin
+  Len := X.Size;
+  PX := X.Data;
+  PY := Y.Data;
+
+  asm
+    mov     rsi, PX
+    mov     rdi, PY
+    mov     rcx, Len
+    movq    xmm0, Alpha
+    vbroadcastsd ymm0, xmm0     // Broadcast scalar Alpha to 4 lanes of YMM0
+
+    cmp     rcx, 4
+    jl      .L_axpy_tail
+
+  .L_axpy_loop4:
+    vmovapd ymm1, [rsi]
+    vmovapd ymm2, [rdi]
+    vfmadd231pd ymm2, ymm1, ymm0 // ymm2 = ymm2 + ymm1 * Alpha
+    vmovapd [rdi], ymm2
+    add     rsi, 32
+    add     rdi, 32
+    sub     rcx, 4
+    cmp     rcx, 4
+    jge     .L_axpy_loop4
+
+  .L_axpy_tail:
+    test    rcx, rcx
+    jz      .L_axpy_done
+
+  .L_axpy_tail_loop:
+    movsd   xmm1, [rsi]
+    movsd   xmm2, [rdi]
+    mulsd   xmm1, xmm0
+    addsd   xmm2, xmm1
+    movsd   [rdi], xmm2
+    add     rsi, 8
+    add     rdi, 8
+    dec     rcx
+    jnz     .L_axpy_tail_loop
+
+  .L_axpy_done:
+    vzeroupper
+  end;
+end;
+
+procedure VectorCopy(constref Src: TDenseVector; var Dst: TDenseVector);
+begin
+  Move(Src.Data^, Dst.Data^, Src.Size * SizeOf(Double));
+end;
+
+procedure VectorScale(Alpha: Double; var V: TDenseVector);
+var
+  i: SizeInt;
+begin
+  for i := 0 to V.Size - 1 do
+    V.Data[i] := V.Data[i] * Alpha;
+end;
+
+{ Sparse Matrix-Vector Multiply (SpMV): Y = A * X }
+procedure CSR_SpMV(constref A: TCSRMatrix; constref X: TDenseVector; var Y: TDenseVector);
+var
+  i, j, RowStart, RowEnd, Col: SizeInt;
+  Sum: Double;
+  PX, PY, PVal: PDouble;
+  PCol, PRow: PSizeInt;
+begin
+  PX := X.Data;
+  PY := Y.Data;
+  PVal := A.Values;
+  PCol := A.ColIdx;
+  PRow := A.RowPtr;
+
+  for i := 0 to A.Rows - 1 do
+  begin
+    RowStart := PRow[i];
+    RowEnd := PRow[i + 1];
+    Sum := 0.0;
+
+    // Loop unrolled for instruction-level parallelism (ILP)
+    j := RowStart;
+    while j <= RowEnd - 4 do
+    begin
+      Sum := Sum + PVal[j]     * PX[PCol[j]]
+                 + PVal[j + 1] * PX[PCol[j + 1]]
+                 + PVal[j + 2] * PX[PCol[j + 2]]
+                 + PVal[j + 3] * PX[PCol[j + 3]];
+      Inc(j, 4);
+    end;
+
+    while j < RowEnd do
+    begin
+      Sum := Sum + PVal[j] * PX[PCol[j]];
+      Inc(j);
+    end;
+
+    PY[i] := Sum;
+  end;
+end;
+
+// --- Iterative Conjugate Gradient (CG) Solver for FEA ---
+
+function SolveConjugateGradient(constref A: TCSRMatrix; constref B: TDenseVector; 
+  var X: TDenseVector; MaxIter: Integer; Tol: Double): Integer;
+var
+  R, P, Ap: TDenseVector;
+  Alpha, Beta, RsOld, RsNew: Double;
+  Iter: Integer;
+begin
+  R := InitVector(A.Rows);
+  P := InitVector(A.Rows);
+  Ap := InitVector(A.Rows);
+
+  // R = B - A*X
+  CSR_SpMV(A, X, Ap);
+  VectorCopy(B, R);
+  VectorAXPY(-1.0, Ap, R);
+
+  // P = R
+  VectorCopy(R, P);
+
+  RsOld := VectorDot(R, R);
+
+  for Iter := 1 to MaxIter do
+  begin
+    if Sqrt(RsOld) < Tol then
+    begin
+      FreeVector(R); FreeVector(P); FreeVector(Ap);
+      Exit(Iter);
+    end;
+
+    // Ap = A * P
+    CSR_SpMV(A, P, Ap);
+
+    // Alpha = RsOld / (P . Ap)
+    Alpha := RsOld / VectorDot(P, Ap);
+
+    // X = X + Alpha * P
+    VectorAXPY(Alpha, P, X);
+
+    // R = R - Alpha * Ap
+    VectorAXPY(-Alpha, Ap, R);
+
+    RsNew := VectorDot(R, R);
+
+    if Sqrt(RsNew) < Tol then
+    begin
+      FreeVector(R); FreeVector(P); FreeVector(Ap);
+      Exit(Iter);
+    end;
+
+    // Beta = RsNew / RsOld
+    Beta := RsNew / RsOld;
+
+    // P = R + Beta * P
+    VectorScale(Beta, P);
+    VectorAXPY(1.0, R, P);
+
+    RsOld := RsNew;
+  end;
+
+  FreeVector(R); FreeVector(P); FreeVector(Ap);
+  Result := MaxIter;
+end;
+
+end.

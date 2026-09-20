@@ -4,7 +4,7 @@ program linstatic;
 
 uses
   SysUtils, Classes, Generics.Collections, Math,
-  fem_types, fem_json_model, fem_validate, fem_index, fem_dofmap, fem_skyline, fem_elements;
+  fem_types, fem_native_model, fem_validate, fem_index, fem_dofmap, fem_skyline, fem_elements;
 
 const
   ExitOk           = 0;
@@ -48,36 +48,6 @@ begin
   Result := fem_dofmap.ElementGlobalDofs(DofMap, NodeIdx, el);
 end;
 
-function ElementStiffness(const el: TElement): TElemMatrix;
-var
-  prop: TProperty;
-  mat: TMaterial;
-  n1, n2: TNode;
-  G: Double;
-  refVec: array[0..2] of Double;
-begin
-  prop := Model.Properties[PropIdx[el.PropertyId]];
-  mat := Model.Materials[MatIdx[prop.MaterialId]];
-  n1 := Model.Nodes[NodeIdx[el.NodeIds[0]]];
-  n2 := Model.Nodes[NodeIdx[el.NodeIds[1]]];
-  if el.ElementType = 'truss' then
-    Result := TrussStiffness3D(mat.E, prop.Area, n1.X, n1.Y, n1.Z, n2.X, n2.Y, n2.Z)
-  else // 'beam' -- fem_validate guarantees no other type reaches here
-  begin
-    G := mat.E / (2.0 * (1.0 + mat.Nu));
-    if el.HasRefVec then
-    begin
-      refVec[0] := el.RefVec[0]; refVec[1] := el.RefVec[1]; refVec[2] := el.RefVec[2];
-    end
-    else
-    begin
-      refVec[0] := 0; refVec[1] := 0; refVec[2] := 0;
-    end;
-    Result := BeamStiffness3D(mat.E, G, prop.Area, prop.Iy, prop.Iz, prop.J,
-      n1.X, n1.Y, n1.Z, n2.X, n2.Y, n2.Z, refVec);
-  end;
-end;
-
 var
   i, j, ei, N: Integer;
   gd: TIntArray;
@@ -96,6 +66,7 @@ var
   RHSPerCase: TDoubleArray;
   UseBareKeys: Boolean;
   KeyPrefix: string;
+  OutF: Text;
 
 function FindLoadCaseIndex(const Id: string): Integer;
 var
@@ -116,14 +87,14 @@ var
 begin
   for ii := 0 to High(Model.Nodes) do
     for jj := 0 to NodeDofCounts[ii] - 1 do
-      WriteLn(Format('%sDISP.%d.%s=%.17e',
+      WriteLn(OutF, Format('%sDISP.%d.%s=%.17e',
         [CasePrefix, Model.Nodes[ii].Id, DofNames[jj], U[GlobalDof(ii, jj)]], FS));
   for ii := 0 to High(Model.Nodes) do
     for jj := 0 to NodeDofCounts[ii] - 1 do
     begin
       ggi := GlobalDof(ii, jj);
       if DofMap.GlobalToEq[ggi] = 0 then
-        WriteLn(Format('%sREACT.%d.%s=%.17e', [CasePrefix, Model.Nodes[ii].Id, DofNames[jj], R[ggi]], FS));
+        WriteLn(OutF, Format('%sREACT.%d.%s=%.17e', [CasePrefix, Model.Nodes[ii].Id, DofNames[jj], R[ggi]], FS));
     end;
 end;
 
@@ -133,10 +104,10 @@ begin
 
   // ---- 1. CLI ----
   if ParamCount <> 1 then
-    Fail(ExitUsage, 'Usage: linstatic <model.json | ->' + LineEnding +
+    Fail(ExitUsage, 'Usage: linstatic <model.fem | ->' + LineEnding +
       '  Reads a FEM model file (or "-" for stdin), runs a linear-static skyline' + LineEnding +
       '  solve for every load case (and freedom case) in the model, and writes' + LineEnding +
-      '  results to stdout. Composes with adaptors: e.g. adapt_strand7 in.txt | linstatic -');
+      '  results to stdout. Composes with adaptors: e.g. adapt_strand7 in.txt | linstatic -   (or adapt_json old.json | linstatic -)');
   ModelFile := ParamStr(1);
 
   // ---- 2. Load ----
@@ -176,9 +147,17 @@ begin
   UseBareKeys := (Length(Model.FreedomCases) = 1) and (Length(Model.LoadCases) = 1)
              and (Length(Model.Combinations) = 0);
 
-  WriteLn('# FreePascal FEM Suite - linstatic (skyline linear-static solver)');
-  WriteLn(Format('# model=%s', [ModelFile]));
-  WriteLn(Format('# nodes=%d elements=%d freedom_cases=%d load_cases=%d combinations=%d',
+  if Model.SolverParams.HasResultsFile then
+  begin
+    AssignFile(OutF, Model.SolverParams.ResultsFile);
+    Rewrite(OutF);
+  end
+  else
+    OutF := Output;
+
+  WriteLn(OutF, '# FreePascal FEM Suite - linstatic (skyline linear-static solver)');
+  WriteLn(OutF, Format('# model=%s', [ModelFile]));
+  WriteLn(OutF, Format('# nodes=%d elements=%d freedom_cases=%d load_cases=%d combinations=%d',
     [NumNodes, Length(Model.Elements), Length(Model.FreedomCases), Length(Model.LoadCases), Length(Model.Combinations)]));
 
   // ---- 5. One pass per freedom case: build its dof map, assemble+factorize K ONCE, ----
@@ -228,7 +207,7 @@ begin
       for ei := 0 to High(Model.Elements) do
       begin
         el := Model.Elements[ei];
-        Klocal := ElementStiffness(el);
+        Klocal := ElementStiffnessFor(Model, NodeIdx, MatIdx, PropIdx, el);
         gd := ElementGDofs[ei];
         N := High(gd);
         for i := 1 to N do
@@ -328,7 +307,7 @@ begin
       for ei := 0 to High(Model.Elements) do
       begin
         el := Model.Elements[ei];
-        Klocal := ElementStiffness(el);
+        Klocal := ElementStiffnessFor(Model, NodeIdx, MatIdx, PropIdx, el);
         gd := ElementGDofs[ei];
         N := High(gd);
         for i := 1 to N do
@@ -381,6 +360,14 @@ begin
 
     K.Free;
   end;
+
+  if Model.SolverParams.HasResultsFile then
+  begin
+    CloseFile(OutF);
+    WriteLn(Format('Results written to %s', [Model.SolverParams.ResultsFile]));
+  end
+  else
+    Flush(OutF); // Halt() below can otherwise skip the buffer flush a normal exit would do
 
   NodeIdx.Free;
   MatIdx.Free;
