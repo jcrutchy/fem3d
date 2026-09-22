@@ -22,6 +22,8 @@ var
   NodeIdx, MatIdx, PropIdx: TIntIntMap;
   FS: TFormatSettings;
   NumThreads: Integer;
+  UseSpinSync: Boolean;
+  SyncModeStr: string;
 
   NumNodes, NDOF, NEQ: Integer;
   DofMap: TDofMap;
@@ -53,6 +55,7 @@ var
   AppliedAtDof: TDoubleArray;
 
   fcIdx, lcIdx, cIdx, tIdx, termLcIdx, pcgIters: Integer;
+  pcgShift: Double;
   FC: TFreedomCase;
   Comb: TCombination;
   CaseFullU: array of TDoubleArray;
@@ -101,6 +104,9 @@ begin
   if GetEnvironmentVariable('FEM_THREADS') <> '' then
     NumThreads := StrToIntDef(GetEnvironmentVariable('FEM_THREADS'), DefaultThreadCount);
   if NumThreads < 1 then NumThreads := 1;
+  UseSpinSync := LowerCase(GetEnvironmentVariable('FEM_SYNC')) = 'spin';
+  if GetEnvironmentVariable('FEM_THREAD_THRESHOLD') <> '' then
+    ElementCountThreadThreshold := StrToIntDef(GetEnvironmentVariable('FEM_THREAD_THRESHOLD'), ElementCountThreadThreshold);
 
   // ---- 1. CLI ----
   if ParamCount <> 1 then
@@ -110,7 +116,10 @@ begin
       '  preconditioned conjugate gradient solver -- no global stiffness matrix' + LineEnding +
       '  is ever assembled or stored, unlike linstatic''s direct skyline solve.' + LineEnding +
       '  See docs/linsparse.md. Set FEM_THREADS to override the thread count' + LineEnding +
-      '  (default ' + IntToStr(DefaultThreadCount) + '; only used once a model has enough elements to be worth it).');
+      '  (default ' + IntToStr(DefaultThreadCount) + '; only used once a model has enough elements to be worth' + LineEnding +
+      '  it -- see FEM_THREAD_THRESHOLD, default ' + IntToStr(ElementCountThreadThreshold) + ' elements).' + LineEnding +
+      '  FEM_SYNC=spin uses busy-spin thread signaling instead of RTLEvents (see' + LineEnding +
+      '  docs/linsparse.md for the measured comparison between the two).');
   ModelFile := ParamStr(1);
 
   // ---- 2. Load ----
@@ -155,8 +164,10 @@ begin
 
   WriteLn(OutF, '# FreePascal FEM Suite - linsparse (element-by-element PCG solver)');
   WriteLn(OutF, Format('# model=%s', [ModelFile]));
-  WriteLn(OutF, Format('# nodes=%d elements=%d freedom_cases=%d load_cases=%d combinations=%d threads=%d',
-    [NumNodes, Length(Model.Elements), Length(Model.FreedomCases), Length(Model.LoadCases), Length(Model.Combinations), NumThreads]));
+  if UseSpinSync then SyncModeStr := 'spin' else SyncModeStr := 'event';
+  WriteLn(OutF, Format('# nodes=%d elements=%d freedom_cases=%d load_cases=%d combinations=%d threads=%d sync=%s thread_threshold=%d',
+    [NumNodes, Length(Model.Elements), Length(Model.FreedomCases), Length(Model.LoadCases), Length(Model.Combinations),
+     NumThreads, SyncModeStr, ElementCountThreadThreshold]));
 
   // ---- 5. One pass per freedom case: build its dof map and precompute every ----
   //         element's local stiffness + equation-number map ONCE (mirrors
@@ -228,15 +239,19 @@ begin
       end;
 
       try
-        RHSPerCase := PCGSolve(ElementData, RHSPerCase, NEQ, Model.SolverParams.Tolerance, NumThreads, pcgIters);
+        RHSPerCase := PCGSolve(ElementData, RHSPerCase, NEQ, Model.SolverParams.Tolerance, NumThreads, pcgIters, pcgShift, UseSpinSync);
       except
         on E: Exception do
           Fail(ExitSolverError, Format('Freedom case "%s", load case "%s": %s', [FC.Id, Model.LoadCases[lcIdx].Id, E.Message]));
       end;
 
       if GetEnvironmentVariable('FEM_DEBUG') = '1' then
+      begin
         WriteLn(StdErr, Format('--- DEBUG: freedom case "%s", load case "%s": PCG converged in %d iterations (tolerance %.3e) ---',
           [FC.Id, Model.LoadCases[lcIdx].Id, pcgIters, Model.SolverParams.Tolerance]));
+        if pcgShift > 0 then
+          WriteLn(StdErr, Format('  (IC(0) needed a diagonal shift of %.3e to avoid breakdown)', [pcgShift]));
+      end;
 
       SetLength(FullU, NDOF + 1);
       for i := 1 to NDOF do
@@ -330,3 +345,4 @@ begin
   PropIdx.Free;
   Halt(ExitOk);
 end.
+

@@ -47,11 +47,15 @@ third-party dependencies — only the FPC standard RTL (`fpjson`,
     real symmetric matrices (used by `modal`; general enough for any
     future solver that needs a dense symmetric eigendecomposition).
   - `fem_pcg.pas` — element-by-element (matrix-free) preconditioned
-    conjugate gradient, with a persistent multithreaded worker pool for
-    the per-iteration matrix-vector product. Used by `linsparse`. See
+    conjugate gradient with an IC(0) preconditioner (bounded-shift
+    fallback for incomplete-factorization breakdown), and a persistent
+    multithreaded worker pool (event- or spin-based, selectable) for the
+    per-iteration matrix-vector product. Used by `linsparse`. See
     `docs/linsparse.md` for what's actually been verified about it
-    (correctness: yes; threading benefit at tested scale: not yet shown;
-    robustness on slender/bending-dominated geometry: a known limitation).
+    (correctness: yes, including on geometry that broke the first
+    Jacobi-preconditioned version; threading benefit: unmeasurable in
+    this single-core development environment, so genuinely unknown
+    pending real multi-core testing).
   - `fem_sha256.pas` — pure-Pascal SHA-256 (FPC's stdlib `hash` package
     ships MD5/SHA1 but not SHA256), used by the regression harness for
     model/manifest integrity checks.
@@ -68,13 +72,16 @@ third-party dependencies — only the FPC standard RTL (`fpjson`,
     diverges where the physics genuinely diverges (mass instead of just
     stiffness, an eigensolve instead of a linear solve).
   - `linsparse` — the same linear-static analysis as `linstatic`, but via
-    a matrix-free, multithreaded PCG solve instead of a direct skyline
-    factorization. See `docs/linsparse.md` for an honest account of what
-    this has and hasn't been shown to deliver yet (correctness: verified
-    against `linstatic` on every applicable regression case; performance:
-    not yet a demonstrated win at any tested scale; a real, found
-    limitation on slender/bending-dominated geometry with the current
-    Jacobi preconditioner).
+    a matrix-free, IC(0)-preconditioned PCG solve instead of a direct
+    skyline factorization. See `docs/linsparse.md` for an honest account
+    of what this has and hasn't been shown to deliver (correctness:
+    verified against `linstatic` on every applicable regression case,
+    including a previously-failing slender-truss case now fixed by
+    switching from Jacobi to IC(0) preconditioning; threading: correctly
+    implemented, two synchronization strategies built and compared, but
+    this development environment has exactly one CPU core, so no
+    threading performance claim from here should be trusted as general —
+    see the doc for what that means concretely).
 - **Adaptors**, under `src/adaptors/<format>/` — convert some other
   format into the canonical native model. Solvers never parse anything
   but the native format; this is the only place other formats enter the
@@ -187,23 +194,30 @@ FEM_THREADS=8 ./bin/linsparse some_large_model.fem   # see docs/linsparse.md bef
       (one stiffness factorization per freedom case, reused across every
       load case's RHS), plus combinations as exact post-hoc linear
       superposition
-- [x] `linsparse`: element-by-element (matrix-free) PCG solver with a
-      persistent multithreaded worker pool. Correctness verified against
-      `linstatic` on every applicable regression case. Performance is
-      *not* yet a demonstrated win at any tested scale (threading
-      overhead dominated up to ~6,000 elements in testing), and plain
-      Jacobi preconditioning fails to converge on slender/bending-
-      dominated geometry where `linstatic` solves directly in
-      milliseconds -- both are documented honestly in `docs/linsparse.md`
-      rather than papered over. `fem_elements.ElementStiffnessFor`
-      factored out as a byproduct, removing a third near-duplicate of
-      the truss/beam dispatch that would otherwise have been needed
-- [ ] A stronger preconditioner for `linsparse` (incomplete Cholesky is
-      the natural next step) -- the real fix for the slender-geometry
-      convergence failure found above
-- [ ] Calibrating (or removing) `linsparse`'s thread-count threshold
-      against an actually-measured crossover point, rather than the
-      current conservative placeholder
+- [x] `linsparse`: element-by-element (matrix-free) PCG solver.
+      Correctness verified against `linstatic` on every applicable
+      regression case. `fem_elements.ElementStiffnessFor` factored out
+      as a byproduct, removing a third near-duplicate of the truss/beam
+      dispatch that would otherwise have been needed
+- [x] IC(0) preconditioning for `linsparse`, replacing plain Jacobi,
+      with a bounded diagonal-shift fallback for incomplete-factorization
+      breakdown. Fixes the real limitation found above: a 1,500-bay
+      slender truss chain that failed to converge in 60,010 iterations
+      under Jacobi now converges in 9,494 under IC(0). The shift is
+      capped small enough that it can't mask a genuinely unstable model
+      (verified: the mechanism case is still correctly rejected)
+- [x] Persistent-pool threading for `linsparse`'s matvec, two
+      synchronization strategies (event-based via `RTLEvent`, spin-based
+      via padded `Interlocked` flags), both correct -- but this
+      development environment turned out to have exactly one CPU core,
+      so no performance claim about either is trustworthy as a general
+      result; see `docs/linsparse.md` for what was actually learned
+      (per-iteration thread spawning is unconditionally wrong; which
+      sync strategy wins depends on real core count, unmeasured here)
+- [ ] Re-measure `linsparse` threading (event vs. spin, and whether
+      threading helps at all) on genuine multi-core hardware -- the
+      current high default thread-count threshold is a placeholder
+      pending that, not a calibrated value
 - [ ] Plate/shell elements — 1st-order (flat, linear) first, verified,
       then 2nd-order; substantial scope on its own (shape functions,
       Gauss quadrature, Jacobian-mapped B-matrix, membrane/bending
