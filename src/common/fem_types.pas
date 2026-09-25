@@ -21,11 +21,12 @@ type
 
   TProperty = record
     Id: Integer;
-    ElementType: string;   // 'truss' | 'beam'
+    ElementType: string;   // 'truss' | 'beam' | 'shellq4'
     MaterialId: Integer;
     Area: Double;          // cross-sectional area (truss, beam)
     Iy, Iz: Double;        // second moment of area about local y / local z axis (beam)
     J: Double;             // torsion constant (beam)
+    Thickness: Double;     // shell thickness (shellq4)
   end;
 
   TElement = record
@@ -133,7 +134,8 @@ function DofOffset(const Dof: string): Integer; // 0..5, or -1 if invalid
 function IsRotationalDof(Offset: Integer): Boolean;
 
 // How many dofs/node an element type needs: 3 for a truss (translations
-// only), 6 for a beam (translations + rotations). 0 = unrecognized type.
+// only), 6 for a beam or shellq4 (translations + rotations). 0 =
+// unrecognized type.
 function DofsPerNodeForElementType(const ElementType: string): Integer;
 
 implementation
@@ -167,6 +169,7 @@ function DofsPerNodeForElementType(const ElementType: string): Integer;
 begin
   if ElementType = 'truss' then Result := 3
   else if ElementType = 'beam' then Result := 6
+  else if ElementType = 'shellq4' then Result := 6
   else Result := 0;
 end;
 

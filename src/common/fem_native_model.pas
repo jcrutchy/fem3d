@@ -46,24 +46,6 @@ begin
   if (Idx >= 0) and (Idx < Length(F)) then Result := F[Idx] else Result := Default;
 end;
 
-function F2I(const F: TFieldArray; Idx: Integer; Default: Integer = 0): Integer;
-var
-  s: string;
-begin
-  s := F2S(F, Idx);
-  if (s = '') or (s = '-') then Result := Default
-  else if not TryStrToInt(s, Result) then Result := Default;
-end;
-
-function F2D(const F: TFieldArray; Idx: Integer; Default: Double = 0.0): Double;
-var
-  s: string;
-begin
-  s := F2S(F, Idx);
-  if (s = '') or (s = '-') then Result := Default
-  else if not TryStrToFloat(s, Result, GFS) then Result := Default;
-end;
-
 function F2HasVal(const F: TFieldArray; Idx: Integer): Boolean;
 var
   s: string;
@@ -117,6 +99,37 @@ var
   procedure GrowMats;  begin Inc(MatCount);  SetLength(Result.Materials, MatCount); end;
   procedure GrowProps; begin Inc(PropCount); SetLength(Result.Properties, PropCount); end;
   procedure GrowElems; begin Inc(ElemCount); SetLength(Result.Elements, ElemCount); end;
+
+  // Strict numeric field parsing: '' or '-' means "not given" (Default,
+  // same as before -- this is the documented optional-field sentinel, not
+  // an error); anything else that fails to parse as an int/float is a
+  // hard error with enough context (line, section, field name, the raw
+  // text) to fix without guessing. Every caller's LoadModelFromFile/
+  // LoadModelFromStdin is already wrapped in a try/except by every
+  // solver, printing 'Could not load model file "X": <message>' -- so
+  // raising here, rather than silently defaulting to 0 the way this used
+  // to work, surfaces cleanly with no further plumbing needed.
+  function F2I(const F: TFieldArray; Idx: Integer; const FieldName: string; Default: Integer = 0): Integer;
+  var
+    s: string;
+  begin
+    s := F2S(F, Idx);
+    if (s = '') or (s = '-') then Result := Default
+    else if not TryStrToInt(s, Result) then
+      raise Exception.CreateFmt('line %d, [%s]: %s must be an integer, got "%s"',
+        [i + 1, secName, FieldName, s]);
+  end;
+
+  function F2D(const F: TFieldArray; Idx: Integer; const FieldName: string; Default: Double = 0.0): Double;
+  var
+    s: string;
+  begin
+    s := F2S(F, Idx);
+    if (s = '') or (s = '-') then Result := Default
+    else if not TryStrToFloat(s, Result, GFS) then
+      raise Exception.CreateFmt('line %d, [%s]: %s must be a number, got "%s"',
+        [i + 1, secName, FieldName, s]);
+  end;
 
 begin
   GFS := DefaultFormatSettings;
@@ -206,53 +219,76 @@ begin
       begin
         F := SplitFields(line);
         GrowNodes;
-        Result.Nodes[NodeCount - 1].Id := F2I(F, 0);
-        Result.Nodes[NodeCount - 1].X := F2D(F, 1);
-        Result.Nodes[NodeCount - 1].Y := F2D(F, 2);
-        Result.Nodes[NodeCount - 1].Z := F2D(F, 3);
+        Result.Nodes[NodeCount - 1].Id := F2I(F, 0, 'id');
+        Result.Nodes[NodeCount - 1].X := F2D(F, 1, 'x');
+        Result.Nodes[NodeCount - 1].Y := F2D(F, 2, 'y');
+        Result.Nodes[NodeCount - 1].Z := F2D(F, 3, 'z');
       end
 
       else if secName = 'MATERIALS' then
       begin
         F := SplitFields(line);
         GrowMats;
-        Result.Materials[MatCount - 1].Id := F2I(F, 0);
-        Result.Materials[MatCount - 1].E := F2D(F, 1);
+        Result.Materials[MatCount - 1].Id := F2I(F, 0, 'id');
+        Result.Materials[MatCount - 1].E := F2D(F, 1, 'E');
         Result.Materials[MatCount - 1].HasNu := F2HasVal(F, 2);
-        Result.Materials[MatCount - 1].Nu := F2D(F, 2);
+        Result.Materials[MatCount - 1].Nu := F2D(F, 2, 'nu');
         Result.Materials[MatCount - 1].HasRho := F2HasVal(F, 3);
-        Result.Materials[MatCount - 1].Rho := F2D(F, 3);
+        Result.Materials[MatCount - 1].Rho := F2D(F, 3, 'rho');
       end
 
       else if secName = 'PROPERTIES' then
       begin
-        // id, type, material, area[, Iy, Iz, J]
+        // id, type, material, area[, Iy, Iz, J]    (truss/beam)
+        // id, type, material, thickness             (shellq4)
         F := SplitFields(line);
         GrowProps;
-        Result.Properties[PropCount - 1].Id := F2I(F, 0);
+        Result.Properties[PropCount - 1].Id := F2I(F, 0, 'id');
         Result.Properties[PropCount - 1].ElementType := LowerCase(F2S(F, 1));
-        Result.Properties[PropCount - 1].MaterialId := F2I(F, 2);
-        Result.Properties[PropCount - 1].Area := F2D(F, 3);
-        Result.Properties[PropCount - 1].Iy := F2D(F, 4);
-        Result.Properties[PropCount - 1].Iz := F2D(F, 5);
-        Result.Properties[PropCount - 1].J := F2D(F, 6);
+        Result.Properties[PropCount - 1].MaterialId := F2I(F, 2, 'material');
+        if Result.Properties[PropCount - 1].ElementType = 'shellq4' then
+          Result.Properties[PropCount - 1].Thickness := F2D(F, 3, 'thickness')
+        else
+        begin
+          Result.Properties[PropCount - 1].Area := F2D(F, 3, 'area');
+          Result.Properties[PropCount - 1].Iy := F2D(F, 4, 'Iy');
+          Result.Properties[PropCount - 1].Iz := F2D(F, 5, 'Iz');
+          Result.Properties[PropCount - 1].J := F2D(F, 6, 'J');
+        end;
       end
 
       else if secName = 'ELEMENTS' then
       begin
-        // id, type, node1, node2, property[, refX, refY, refZ]
+        // id, type, node1, node2, property[, refX, refY, refZ]    (truss/beam)
+        // id, type, node1, node2, node3, node4, property           (shellq4)
         F := SplitFields(line);
         GrowElems;
-        Result.Elements[ElemCount - 1].Id := F2I(F, 0);
+        Result.Elements[ElemCount - 1].Id := F2I(F, 0, 'id');
         Result.Elements[ElemCount - 1].ElementType := LowerCase(F2S(F, 1));
-        SetLength(Result.Elements[ElemCount - 1].NodeIds, 2);
-        Result.Elements[ElemCount - 1].NodeIds[0] := F2I(F, 2);
-        Result.Elements[ElemCount - 1].NodeIds[1] := F2I(F, 3);
-        Result.Elements[ElemCount - 1].PropertyId := F2I(F, 4);
-        Result.Elements[ElemCount - 1].HasRefVec := F2HasVal(F, 5) or F2HasVal(F, 6) or F2HasVal(F, 7);
-        Result.Elements[ElemCount - 1].RefVec[0] := F2D(F, 5);
-        Result.Elements[ElemCount - 1].RefVec[1] := F2D(F, 6);
-        Result.Elements[ElemCount - 1].RefVec[2] := F2D(F, 7);
+        if Result.Elements[ElemCount - 1].ElementType = 'shellq4' then
+        begin
+          SetLength(Result.Elements[ElemCount - 1].NodeIds, 4);
+          Result.Elements[ElemCount - 1].NodeIds[0] := F2I(F, 2, 'node1');
+          Result.Elements[ElemCount - 1].NodeIds[1] := F2I(F, 3, 'node2');
+          Result.Elements[ElemCount - 1].NodeIds[2] := F2I(F, 4, 'node3');
+          Result.Elements[ElemCount - 1].NodeIds[3] := F2I(F, 5, 'node4');
+          Result.Elements[ElemCount - 1].PropertyId := F2I(F, 6, 'property');
+          Result.Elements[ElemCount - 1].HasRefVec := False;
+          Result.Elements[ElemCount - 1].RefVec[0] := 0;
+          Result.Elements[ElemCount - 1].RefVec[1] := 0;
+          Result.Elements[ElemCount - 1].RefVec[2] := 0;
+        end
+        else
+        begin
+          SetLength(Result.Elements[ElemCount - 1].NodeIds, 2);
+          Result.Elements[ElemCount - 1].NodeIds[0] := F2I(F, 2, 'node1');
+          Result.Elements[ElemCount - 1].NodeIds[1] := F2I(F, 3, 'node2');
+          Result.Elements[ElemCount - 1].PropertyId := F2I(F, 4, 'property');
+          Result.Elements[ElemCount - 1].HasRefVec := F2HasVal(F, 5) or F2HasVal(F, 6) or F2HasVal(F, 7);
+          Result.Elements[ElemCount - 1].RefVec[0] := F2D(F, 5, 'refX');
+          Result.Elements[ElemCount - 1].RefVec[1] := F2D(F, 6, 'refY');
+          Result.Elements[ElemCount - 1].RefVec[2] := F2D(F, 7, 'refZ');
+        end;
       end
 
       else if secName = 'FREEDOMCASE' then
@@ -261,9 +297,9 @@ begin
         F := SplitFields(line);
         Inc(curFcConstraints);
         SetLength(Result.FreedomCases[fcIdx].Constraints, curFcConstraints);
-        Result.FreedomCases[fcIdx].Constraints[curFcConstraints - 1].NodeId := F2I(F, 0);
+        Result.FreedomCases[fcIdx].Constraints[curFcConstraints - 1].NodeId := F2I(F, 0, 'node');
         Result.FreedomCases[fcIdx].Constraints[curFcConstraints - 1].Dof := LowerCase(F2S(F, 1));
-        Result.FreedomCases[fcIdx].Constraints[curFcConstraints - 1].Value := F2D(F, 2);
+        Result.FreedomCases[fcIdx].Constraints[curFcConstraints - 1].Value := F2D(F, 2, 'value');
       end
 
       else if secName = 'LOADCASE' then
@@ -272,9 +308,9 @@ begin
         F := SplitFields(line);
         Inc(curLcLoads);
         SetLength(Result.LoadCases[lcIdx].Loads, curLcLoads);
-        Result.LoadCases[lcIdx].Loads[curLcLoads - 1].NodeId := F2I(F, 0);
+        Result.LoadCases[lcIdx].Loads[curLcLoads - 1].NodeId := F2I(F, 0, 'node');
         Result.LoadCases[lcIdx].Loads[curLcLoads - 1].Dof := LowerCase(F2S(F, 1));
-        Result.LoadCases[lcIdx].Loads[curLcLoads - 1].Value := F2D(F, 2);
+        Result.LoadCases[lcIdx].Loads[curLcLoads - 1].Value := F2D(F, 2, 'value');
       end
 
       else if secName = 'COMBINATION' then
@@ -298,7 +334,8 @@ begin
               valStr := Trim(Copy(F[eqPos], Pos(':', F[eqPos]) + 1, Length(F[eqPos])));
               Result.Combinations[combIdx].Terms[eqPos].LoadCaseId := key;
               if not TryStrToFloat(valStr, Result.Combinations[combIdx].Terms[eqPos].Factor, GFS) then
-                Result.Combinations[combIdx].Terms[eqPos].Factor := 0.0;
+                raise Exception.CreateFmt('line %d, [COMBINATION]: Terms factor for load case "%s" must be a number, got "%s"',
+                  [i + 1, key, valStr]);
             end;
           end;
         end;
@@ -312,7 +349,11 @@ begin
           key := UpperCase(Trim(Copy(line, 1, eqPos - 1)));
           valStr := Trim(Copy(line, eqPos + 1, Length(line)));
           if key = 'TOLERANCE' then
-            Result.SolverParams.Tolerance := StrToFloatDef(valStr, 1e-9, GFS)
+          begin
+            if not TryStrToFloat(valStr, Result.SolverParams.Tolerance, GFS) then
+              raise Exception.CreateFmt('line %d, [SOLVERPARAMS]: Tolerance must be a number, got "%s"',
+                [i + 1, valStr]);
+          end
           else if key = 'RESULTSFILE' then
           begin
             Result.SolverParams.HasResultsFile := True;

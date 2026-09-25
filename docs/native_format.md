@@ -28,10 +28,12 @@ Units=SI (N, m, Pa, rad)
 
 [PROPERTIES]
 # id, type, material, area[, Iy, Iz, J]    (Iy/Iz/J only for beam)
+# id, type, material, thickness             (shellq4)
 1, truss, 1, 0.001
 
 [ELEMENTS]
 # id, type, node1, node2, property[, refX, refY, refZ]    (refVec optional, beam only)
+# id, type, node1, node2, node3, node4, property           (shellq4, 4 nodes CCW, flat)
 1, truss, 1, 2, 1
 
 [FREEDOMCASE default]
@@ -74,8 +76,12 @@ ResultsFile=results.txt
   present-vs-zero distinction the JSON format's field presence gave you.
 - **Variable field count by type**: `PROPERTIES` and `ELEMENTS` rows have
   more fields for a `beam` than a `truss` (section properties, an
-  optional orientation vector) — the parser reads the `type` field to
-  know how many to expect, same as the loader has always worked.
+  optional orientation vector), and a `shellq4` row has its own shape
+  again (`thickness` instead of `area`/`Iy`/`Iz`/`J`; 4 node ids instead
+  of 2, no orientation vector — a flat shell's orientation comes from
+  its node order, not a separate refVec) — the parser reads the `type`
+  field to know how many to expect, same as the loader has always
+  worked.
 - **`key=value` lines**: `HEADER`, `SOLVERPARAMS`, and a `COMBINATION`
   section's `FreedomCase=`/`Terms=` lines use simple `key=value`, not
   tabular rows (`COMBINATION`'s `Terms=DL:1.2,LL:1.6` packs a load-case-id
@@ -83,7 +89,15 @@ ResultsFile=results.txt
   term list is usually short).
 - **Numbers**: plain decimal or scientific notation (`210e9`, `2.1E+11`),
   `.` decimal point always (locale-independent, like everything else in
-  this suite).
+  this suite). A numeric field that isn't empty/`-` but fails to parse
+  (`abc`, a stray letter, a typo) is a hard load-time error naming the
+  line, section, and field — never silently treated as `0`. Note that
+  this only catches text that fails to parse as a number at all: the
+  literal text `nan` or `inf` parses successfully as a NaN/Infinity
+  double (that's how the underlying float parser works), so those are
+  caught separately, by `fem_validate`'s explicit finite-value checks on
+  the fields that matter (coordinates, material/section properties,
+  freedom-case and load values), not by the parser.
 
 ## Where this fits
 

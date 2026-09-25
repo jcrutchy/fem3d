@@ -93,3 +93,6 @@ semi-definite, which for a valid structure shouldn't happen).
   iteration, Lanczos) would be the natural upgrade if that ever matters.
 - No rotary inertia for beam elements (see above) -- a beam model only
   works here if its rotational dofs are fixed.
+- No mass matrix for `shellq4` -- a model containing one is rejected
+  outright (by element type, not silently mishandled) rather than run
+  with a wrong or missing mass contribution.

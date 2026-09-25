@@ -1,0 +1,28 @@
+# FreePascal FEM Suite - native model format
+[HEADER]
+Solver=linstatic
+[NODES]
+1, 0, 0, 0
+2, 1, 0, 0
+
+[MATERIALS]
+1, 200000000000, 0.3, -
+
+[PROPERTIES]
+# property 1 is a shellq4 property (thickness only -- no area/Iy/Iz/J)
+1, shellq4, 1, 0.05
+
+[ELEMENTS]
+# but this element is declared as a beam, pointing at that shellq4 property
+1, beam, 1, 2, 1
+
+[FREEDOMCASE default]
+1, x, 0
+1, y, 0
+1, z, 0
+1, rx, 0
+1, ry, 0
+1, rz, 0
+
+[LOADCASE default]
+2, x, 1000

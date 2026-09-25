@@ -35,9 +35,13 @@ example in the actual file syntax.
   - `"beam"`: `material` (whose `nu` must be set), `area` (> 0), `Iy`,
     `Iz` (second moments of area about the local y/z axes, > 0), `J`
     (torsion constant, > 0).
+  - `"shellq4"`: `material` (whose `nu` must be set), `thickness` (> 0).
 - **elements** — `id`, `type`, `nodes` (ordered list, length depends on
-  type), `property`. Both `"truss"` and `"beam"` take exactly 2 node
-  ids.
+  type), `property`. `"truss"` and `"beam"` take exactly 2 node ids;
+  `"shellq4"` takes exactly 4, ordered counterclockwise around the
+  element as seen from its positive-normal side, and must be flat (all
+  4 nodes coplanar, within 1% of the element's characteristic edge
+  length -- checked by the validator, not left to degrade silently).
   - `"truss"` models a 2-node, 3D pin-jointed axial bar (no bending
     stiffness).
   - `"beam"` models a 2-node 3D Euler-Bernoulli frame element (axial +
@@ -52,6 +56,18 @@ example in the actual file syntax.
     default heuristic (global Z, falling back to global X for
     near-vertical members -- the same convention most frame-analysis
     tools default to).
+  - `"shellq4"` models a 4-node flat-shell element: membrane (in-plane,
+    bilinear) + DKQ (Discrete Kirchhoff Quad) thin-plate bending,
+    combined locally into 6 dof/node (`x,y,z,rx,ry,rz` -- the same
+    convention `"beam"` uses, so the two connect consistently at a
+    shared node). In-plane corner rotation (`rz`, "drilling") has no
+    real stiffness from either the membrane or bending formulation, so
+    a small artificial penalty regularizes it -- a documented
+    simplification (see `QuadShellStiffnessLocal` in
+    `fem_elements.pas`), not a from-first-principles drilling
+    formulation. Not yet supported by `modal` (no mass matrix
+    implemented for it -- rejected by name rather than silently
+    mishandled, see `docs/modal.md`).
 - **constraints** — `node`, `dof` (`"x"`,`"y"`,`"z"`,`"rx"`,`"ry"`,`"rz"`),
   `value` (prescribed displacement/rotation; `0.0` = fixed). Non-zero
   values are supported — `linstatic` folds them into the load vector
@@ -69,18 +85,43 @@ matrix. It checks, among other things:
 - dangling references (element → node/property, property → material,
   constraint/load → node)
 - unsupported element types, wrong node count for an element's type
-- non-positive `E`, `area`, `Iy`, `Iz`, `J`; `nu` out of the physically
-  valid range; a beam material missing `nu`
+- **an element's type matches its property's type** (e.g. a `beam`
+  element pointing at a `shellq4` property is rejected outright, rather
+  than silently reading that property's never-validated, likely-zero
+  `Area`/`Iy`/`Iz`/`J`)
+- non-positive `E`, `area`, `Iy`, `Iz`, `J`, `thickness`; `nu` out of the
+  physically valid range; a beam or shellq4 material missing `nu`
+- **every coordinate, material/section property, and freedom-case/
+  load-case value is finite** (not NaN, not ±Infinity) -- this is
+  separate from the parser's own strictness (below) because a value
+  like the literal text `nan` parses successfully as a NaN double; only
+  an explicit finite-value check catches it
 - a beam's `refVec` (or the default heuristic, if none given) being
   (near-)parallel to its own axis -- degenerate, can't fix its roll
+- a shellq4's 4 nodes are coplanar (within 1% of its characteristic edge
+  length) -- the DKQ/membrane formulation assumes a flat element
 - a constraint/load referencing a rotational dof at a node with no
-  rotational dof (i.e. not connected to any beam)
+  rotational dof (i.e. not connected to any beam or shellq4)
+- **no duplicate `(node, dof)` constraint within one freedom case** --
+  two constraints on the same dof (even identical ones) is rejected
+  rather than letting the later one silently win
 - at least one constraint present (an unconstrained model is caught here
   before assembly, as a fast, specific error rather than a generic
   singular-matrix failure from the solver)
+- `SolverParams.Tolerance` is finite, positive, and within a plausible
+  range (roughly 1e-15 to 1.0 -- outside that is almost certainly a typo)
+
+Separately, the **native `.fem` parser itself** (`fem_native_model.pas`)
+is strict about syntax: a numeric field that isn't empty/`-` but fails
+to parse at all (a stray letter, a typo) is a load-time error naming the
+line, section, and field -- never silently coerced to `0`, the way it
+used to work. This is a distinct layer from the semantic checks above:
+the parser answers "did I read a number", `fem_validate` answers "is
+that number physically usable".
 
 Validation errors are printed to stderr, one per line, and the process
-exits with code 3. See "Exit codes" below.
+exits with code 3 (a parse-syntax error from the loader itself exits
+with code 2 instead). See "Exit codes" below.
 
 **What belongs in `fem_validate` vs. a solver itself.** The shared
 validator only checks things that are true or false about the *model*,
@@ -202,11 +243,10 @@ there's more than one freedom case, bare `MODE.<n>...` otherwise.
 
 ## Planned extensions
 
-- Plate/shell elements, including a 2nd-order (curved-edge) variant --
-  substantial scope (shape functions, Gauss quadrature, a Jacobian-mapped
-  B-matrix, membrane/bending coupling, drilling-dof stabilization); to be
-  built and verified incrementally like beam was (truss -> beam), not in
-  one pass. 1st-order (flat, linear) first, 2nd-order after. Not started.
+- Plate/shell elements: 1st-order (flat, linear) `shellq4` is built and
+  wired (membrane + DKQ bending, 6 dof/node, artificial drilling-dof
+  penalty -- see the `"shellq4"` property/element entries above).
+  2nd-order (curved-edge) variant not started.
 - Adaptors for other ASCII input formats (Strand7 `.txt`, etc.) — see
   `docs/adaptors.md`. `adapt_json` (JSON -> native) exists; a
   Strand7-format adaptor is low priority for now, not started.

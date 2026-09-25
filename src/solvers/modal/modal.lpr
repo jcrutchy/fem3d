@@ -52,6 +52,12 @@ var
   L, halfMass: Double;
   nIdx1, nIdx2, k: Integer;
 begin
+  if (el.ElementType <> 'truss') and (el.ElementType <> 'beam') then
+    raise Exception.CreateFmt(
+      'modal does not yet support element type "%s" (element %d) -- no mass matrix ' +
+      'is implemented for it (this solver''s lumped-mass formula assumes a 2-node line ' +
+      'element''s length and cross-sectional area). Avoid modal analysis on models ' +
+      'containing this element type for now.', [el.ElementType, el.Id]);
   prop := Model.Properties[PropIdx[el.PropertyId]];
   mat := Model.Materials[MatIdx[prop.MaterialId]];
   n1 := Model.Nodes[NodeIdx[el.NodeIds[0]]];
@@ -224,8 +230,13 @@ begin
     // ---- Lumped mass ----
     SetLength(MassLumped, DofMap.NDOF + 1);
     for i := 1 to DofMap.NDOF do MassLumped[i] := 0.0;
-    for ei := 0 to High(Model.Elements) do
-      AddElementMass(Model.Elements[ei]);
+    try
+      for ei := 0 to High(Model.Elements) do
+        AddElementMass(Model.Elements[ei]);
+    except
+      on E: Exception do
+        Fail(ExitInvalidModel, Format('Freedom case "%s": %s', [FC.Id, E.Message]));
+    end;
 
     SetLength(massedDof, DofMap.NEQ + 1);
     for i := 1 to DofMap.NDOF do

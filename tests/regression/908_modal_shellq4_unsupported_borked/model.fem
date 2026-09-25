@@ -1,0 +1,43 @@
+# FreePascal FEM Suite - native model format
+[HEADER]
+Solver=modal
+Units=SI (N, m, Pa)
+
+[NODES]
+# id, x, y, z
+1, 0, 0, 0
+2, 2, 0, 0
+3, 2, 1, 0
+4, 0, 1, 0
+
+[MATERIALS]
+# id, E, nu, rho
+1, 200000000000, 0.3, 7850
+
+[PROPERTIES]
+# id, type, material, thickness
+1, shellq4, 1, 0.05
+
+[ELEMENTS]
+# id, type, node1, node2, node3, node4, property
+1, shellq4, 1, 2, 3, 4, 1
+
+[FREEDOMCASE default]
+# node, dof, value
+1, x, 0
+1, y, 0
+1, z, 0
+1, rx, 0
+1, ry, 0
+1, rz, 0
+4, x, 0
+4, y, 0
+4, z, 0
+4, rx, 0
+4, ry, 0
+4, rz, 0
+
+[LOADCASE default]
+
+[SOLVERPARAMS]
+Tolerance=1E-9

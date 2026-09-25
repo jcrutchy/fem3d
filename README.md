@@ -63,7 +63,12 @@ third-party dependencies — only the FPC standard RTL (`fpjson`,
   - `linstatic` — linear-static analysis via the skyline solver. The
     first one, and the reference implementation for the conventions above
     (exit codes, KV output, `FEM_DEBUG`, stdin via `-`, `ResultsFile`).
-    The reliable default — exact, robust regardless of geometry.
+    The reference solver: a direct, non-pivoting symmetric-positive-
+    definite skyline solve. Not "exact" in a floating-point sense and
+    not immune to conditioning problems (a legitimate but badly-scaled
+    stiffness matrix can still trip its pivot-rejection threshold) --
+    but for a well-posed model it's the most trustworthy of the three,
+    and the one the others get checked against.
   - `modal` — lumped-mass modal analysis (natural frequencies + mode
     shapes) via a dense Jacobi eigensolve. See `docs/modal.md`. The
     second solver, proving out the "common library, separate executable"
@@ -218,11 +223,15 @@ FEM_THREADS=8 ./bin/linsparse some_large_model.fem   # see docs/linsparse.md bef
       threading helps at all) on genuine multi-core hardware -- the
       current high default thread-count threshold is a placeholder
       pending that, not a calibrated value
-- [ ] Plate/shell elements — 1st-order (flat, linear) first, verified,
-      then 2nd-order; substantial scope on its own (shape functions,
-      Gauss quadrature, Jacobian-mapped B-matrix, membrane/bending
-      coupling); planned as its own incremental build (like truss ->
-      beam), not started
+- [x] Plate/shell elements — 1st-order (flat, linear) `shellq4` built,
+      verified (57-check standalone patch-test suite covering membrane,
+      DKQ bending, and the combined flat shell's full 6-rigid-body-mode
+      invariance), and wired through the full pipeline (native/JSON
+      format, `fem_validate`, `fem_dofmap`, `linstatic`/`linsparse`; not
+      yet supported by `modal` -- no shell mass matrix, rejected by
+      name). Drilling dof (`rz`) uses a documented artificial penalty,
+      not a from-first-principles formulation. 2nd-order (curved-edge)
+      not started.
 - [ ] Adaptors for other ASCII formats (Strand7 `.txt` first candidate;
       see `docs/adaptors.md` — low priority for now, not started)
 - [ ] Rotary inertia for beam elements, so `modal` can handle a beam's

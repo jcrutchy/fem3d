@@ -144,6 +144,7 @@ begin
         Result.Properties[i].Iy := JItem.Get('Iy', 0.0);
         Result.Properties[i].Iz := JItem.Get('Iz', 0.0);
         Result.Properties[i].J := JItem.Get('J', 0.0);
+        Result.Properties[i].Thickness := JItem.Get('thickness', 0.0);
       end;
     end;
 

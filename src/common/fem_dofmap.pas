@@ -31,8 +31,8 @@ function BuildDofMap(const Model: TModel; NodeIdx: TIntIntMap;
 function GlobalDof(const Map: TDofMap; NodeIndex, LocalOffset: Integer): Integer; inline;
 
 // 1-based global dof list for an element (6 entries for a truss, 12 for a
-// beam), in the same order its local stiffness/mass matrix uses: node1's
-// dofs, then node2's.
+// beam, 24 for a shellq4), in the same order its local stiffness/mass
+// matrix uses: node1's dofs, then node2's, and so on.
 function ElementGlobalDofs(const Map: TDofMap; NodeIdx: TIntIntMap; const el: TElement): TIntArray;
 
 implementation
@@ -81,16 +81,16 @@ end;
 
 function ElementGlobalDofs(const Map: TDofMap; NodeIdx: TIntIntMap; const el: TElement): TIntArray;
 var
-  dpn, nIdx1, nIdx2, k: Integer;
+  dpn, nn, n, nIdx, k: Integer;
 begin
   dpn := DofsPerNodeForElementType(el.ElementType);
-  nIdx1 := NodeIdx[el.NodeIds[0]];
-  nIdx2 := NodeIdx[el.NodeIds[1]];
-  SetLength(Result, 2 * dpn + 1);
-  for k := 0 to dpn - 1 do
+  nn := Length(el.NodeIds);
+  SetLength(Result, nn * dpn + 1);
+  for n := 0 to nn - 1 do
   begin
-    Result[k + 1]       := GlobalDof(Map, nIdx1, k);
-    Result[k + 1 + dpn] := GlobalDof(Map, nIdx2, k);
+    nIdx := NodeIdx[el.NodeIds[n]];
+    for k := 0 to dpn - 1 do
+      Result[n * dpn + k + 1] := GlobalDof(Map, nIdx, k);
   end;
 end;
 
