@@ -65,7 +65,7 @@ begin
     SL.Add('');
 
     SL.Add('[PROPERTIES]');
-    SL.Add('# id, type, material, area[, Iy, Iz, J]    (shellq4: id, type, material, thickness)');
+    SL.Add('# id, type, material, area[, Iy, Iz, J]    (shellq4/shellq8: id, type, material, thickness)');
     for i := 0 to High(Model.Properties) do
     begin
       if Model.Properties[i].ElementType = 'beam' then
@@ -73,7 +73,7 @@ begin
           [Model.Properties[i].Id, Model.Properties[i].ElementType, Model.Properties[i].MaterialId,
            D2S(Model.Properties[i].Area), D2S(Model.Properties[i].Iy),
            D2S(Model.Properties[i].Iz), D2S(Model.Properties[i].J)]))
-      else if Model.Properties[i].ElementType = 'shellq4' then
+      else if (Model.Properties[i].ElementType = 'shellq4') or (Model.Properties[i].ElementType = 'shellq8') then
         SL.Add(Format('%d, %s, %d, %s',
           [Model.Properties[i].Id, Model.Properties[i].ElementType, Model.Properties[i].MaterialId,
            D2S(Model.Properties[i].Thickness)]))
@@ -85,13 +85,17 @@ begin
     SL.Add('');
 
     SL.Add('[ELEMENTS]');
-    SL.Add('# id, type, node1, node2, property[, refX, refY, refZ]    (shellq4: id, type, node1..node4, property)');
+    SL.Add('# id, type, node1, node2, property[, refX, refY, refZ]    (shellq4: id, type, node1..node4, property; shellq8: id, type, node1..node8, property)');
     for i := 0 to High(Model.Elements) do
     begin
       el := Model.Elements[i];
       if el.ElementType = 'shellq4' then
         SL.Add(Format('%d, %s, %d, %d, %d, %d, %d',
           [el.Id, el.ElementType, el.NodeIds[0], el.NodeIds[1], el.NodeIds[2], el.NodeIds[3], el.PropertyId]))
+      else if el.ElementType = 'shellq8' then
+        SL.Add(Format('%d, %s, %d, %d, %d, %d, %d, %d, %d, %d, %d',
+          [el.Id, el.ElementType, el.NodeIds[0], el.NodeIds[1], el.NodeIds[2], el.NodeIds[3],
+           el.NodeIds[4], el.NodeIds[5], el.NodeIds[6], el.NodeIds[7], el.PropertyId]))
       else if el.HasRefVec then
         SL.Add(Format('%d, %s, %d, %d, %d, %s, %s, %s',
           [el.Id, el.ElementType, el.NodeIds[0], el.NodeIds[1], el.PropertyId,

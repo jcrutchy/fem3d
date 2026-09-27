@@ -240,13 +240,14 @@ begin
       else if secName = 'PROPERTIES' then
       begin
         // id, type, material, area[, Iy, Iz, J]    (truss/beam)
-        // id, type, material, thickness             (shellq4)
+        // id, type, material, thickness             (shellq4, shellq8)
         F := SplitFields(line);
         GrowProps;
         Result.Properties[PropCount - 1].Id := F2I(F, 0, 'id');
         Result.Properties[PropCount - 1].ElementType := LowerCase(F2S(F, 1));
         Result.Properties[PropCount - 1].MaterialId := F2I(F, 2, 'material');
-        if Result.Properties[PropCount - 1].ElementType = 'shellq4' then
+        if (Result.Properties[PropCount - 1].ElementType = 'shellq4')
+           or (Result.Properties[PropCount - 1].ElementType = 'shellq8') then
           Result.Properties[PropCount - 1].Thickness := F2D(F, 3, 'thickness')
         else
         begin
@@ -261,6 +262,7 @@ begin
       begin
         // id, type, node1, node2, property[, refX, refY, refZ]    (truss/beam)
         // id, type, node1, node2, node3, node4, property           (shellq4)
+        // id, type, node1..node8, property                         (shellq8)
         F := SplitFields(line);
         GrowElems;
         Result.Elements[ElemCount - 1].Id := F2I(F, 0, 'id');
@@ -273,6 +275,23 @@ begin
           Result.Elements[ElemCount - 1].NodeIds[2] := F2I(F, 4, 'node3');
           Result.Elements[ElemCount - 1].NodeIds[3] := F2I(F, 5, 'node4');
           Result.Elements[ElemCount - 1].PropertyId := F2I(F, 6, 'property');
+          Result.Elements[ElemCount - 1].HasRefVec := False;
+          Result.Elements[ElemCount - 1].RefVec[0] := 0;
+          Result.Elements[ElemCount - 1].RefVec[1] := 0;
+          Result.Elements[ElemCount - 1].RefVec[2] := 0;
+        end
+        else if Result.Elements[ElemCount - 1].ElementType = 'shellq8' then
+        begin
+          SetLength(Result.Elements[ElemCount - 1].NodeIds, 8);
+          Result.Elements[ElemCount - 1].NodeIds[0] := F2I(F, 2, 'node1');
+          Result.Elements[ElemCount - 1].NodeIds[1] := F2I(F, 3, 'node2');
+          Result.Elements[ElemCount - 1].NodeIds[2] := F2I(F, 4, 'node3');
+          Result.Elements[ElemCount - 1].NodeIds[3] := F2I(F, 5, 'node4');
+          Result.Elements[ElemCount - 1].NodeIds[4] := F2I(F, 6, 'node5');
+          Result.Elements[ElemCount - 1].NodeIds[5] := F2I(F, 7, 'node6');
+          Result.Elements[ElemCount - 1].NodeIds[6] := F2I(F, 8, 'node7');
+          Result.Elements[ElemCount - 1].NodeIds[7] := F2I(F, 9, 'node8');
+          Result.Elements[ElemCount - 1].PropertyId := F2I(F, 10, 'property');
           Result.Elements[ElemCount - 1].HasRefVec := False;
           Result.Elements[ElemCount - 1].RefVec[0] := 0;
           Result.Elements[ElemCount - 1].RefVec[1] := 0;

@@ -12,7 +12,7 @@ uses
 function ValidateModel(const Model: TModel): TStringList;
 
 const
-  SupportedElementTypes: array[0..2] of string = ('truss', 'beam', 'shellq4');
+  SupportedElementTypes: array[0..3] of string = ('truss', 'beam', 'shellq4', 'shellq8');
 
 implementation
 
@@ -33,6 +33,7 @@ function NodesPerElementType(const T: string): Integer;
 begin
   if (T = 'truss') or (T = 'beam') then Result := 2
   else if T = 'shellq4' then Result := 4
+  else if T = 'shellq8' then Result := 8
   else Result := 0;
 end;
 
@@ -49,6 +50,7 @@ var
   refDx, refDy, refDz, refLen, cosAngle, ax, ay, az, aLen: Double;
   n1, n2: TNode;
   n3, n4: TNode;
+  n5, n6, n7, n8: TNode;
   e1x, e1y, e1z, e2x, e2y, e2z, e1Len, e2Len, nx, ny, nz, nLen: Double;
   charLen, d3x, d3y, d3z, outOfPlane: Double;
   FreedomCaseIds, LoadCaseIds: TStringList;
@@ -67,6 +69,31 @@ var
       Errs.Add(Label_ + ' is NaN')
     else if IsInfinite(v) then
       Errs.Add(Label_ + ' is infinite');
+  end;
+
+  // Shellq8-only: the Q8 formulation's isoparametric geometry mapping
+  // (and, in turn, the exact-reproduction properties the element's
+  // patch tests rely on) assumes each midside node sits at the exact
+  // 3D midpoint of the two corner nodes on either side of it -- not
+  // merely "roughly between them" or "in the right plane". This checks
+  // the actual 3D distance from that exact midpoint against the same
+  // charLen-relative tolerance the corner flatness check above uses,
+  // which catches an out-of-plane midside node too (its true midpoint
+  // is in-plane whenever both corners are, so any out-of-plane offset
+  // shows up as nonzero distance here without a separate check).
+  procedure CheckQ8MidsideNode(elId, midNodeId: Integer;
+    const cornerA, cornerB, mid: TNode; charLenLocal: Double);
+  var
+    trueMidX, trueMidY, trueMidZ, offX, offY, offZ, offDist: Double;
+  begin
+    trueMidX := 0.5 * (cornerA.X + cornerB.X);
+    trueMidY := 0.5 * (cornerA.Y + cornerB.Y);
+    trueMidZ := 0.5 * (cornerA.Z + cornerB.Z);
+    offX := mid.X - trueMidX; offY := mid.Y - trueMidY; offZ := mid.Z - trueMidZ;
+    offDist := Sqrt(offX*offX + offY*offY + offZ*offZ);
+    if offDist > 0.01 * charLenLocal then
+      Errs.Add(Format('Element %d: shellq8 midside node %d is %.4g%% of the element''s characteristic edge length away from the exact midpoint of its edge (the Q8 formulation requires exact edge midpoints)',
+        [elId, midNodeId, 100.0*offDist/charLenLocal]));
   end;
 
 begin
@@ -118,14 +145,14 @@ begin
       Errs.Add(Format('Property %d: unsupported element type "%s"', [prop.Id, prop.ElementType]))
     else
     begin
-      if prop.ElementType = 'shellq4' then
+      if (prop.ElementType = 'shellq4') or (prop.ElementType = 'shellq8') then
       begin
         CheckFinite(prop.Thickness, Format('Property %d: thickness', [prop.Id]));
         if prop.Thickness <= 0 then
-          Errs.Add(Format('Property %d: thickness must be positive for a shellq4', [prop.Id]));
+          Errs.Add(Format('Property %d: thickness must be positive for a %s', [prop.Id, prop.ElementType]));
         if MatIdx.TryGetValue(prop.MaterialId, matI) and not Model.Materials[matI].HasNu then
-          Errs.Add(Format('Property %d: shellq4 requires its material (%d) to specify nu (Poisson''s ratio)',
-            [prop.Id, prop.MaterialId]));
+          Errs.Add(Format('Property %d: %s requires its material (%d) to specify nu (Poisson''s ratio)',
+            [prop.Id, prop.ElementType, prop.MaterialId]));
       end
       else
       begin
@@ -234,6 +261,60 @@ begin
           if outOfPlane > 0.01 * charLen then
             Errs.Add(Format('Element %d: shellq4 is not flat -- node %d is %.4g%% of the element''s characteristic edge length out of the plane through nodes %d, %d, %d',
               [el.Id, el.NodeIds[2], 100.0*outOfPlane/charLen, el.NodeIds[0], el.NodeIds[1], el.NodeIds[3]]));
+        end;
+      end;
+    end;
+
+    // Shellq8 flatness + midside placement: same corner-flatness logic
+    // as shellq4 (local plane from nodes 1, 2, 4; node 3 must lie in
+    // it), PLUS each midside node (5-8) must sit at the exact midpoint
+    // of its edge -- see CheckQ8MidsideNode's comment for why.
+    if (el.ElementType = 'shellq8') and (Length(el.NodeIds) = 8)
+       and NodeIdx.ContainsKey(el.NodeIds[0]) and NodeIdx.ContainsKey(el.NodeIds[1])
+       and NodeIdx.ContainsKey(el.NodeIds[2]) and NodeIdx.ContainsKey(el.NodeIds[3])
+       and NodeIdx.ContainsKey(el.NodeIds[4]) and NodeIdx.ContainsKey(el.NodeIds[5])
+       and NodeIdx.ContainsKey(el.NodeIds[6]) and NodeIdx.ContainsKey(el.NodeIds[7]) then
+    begin
+      n1 := Model.Nodes[NodeIdx[el.NodeIds[0]]];
+      n2 := Model.Nodes[NodeIdx[el.NodeIds[1]]];
+      n3 := Model.Nodes[NodeIdx[el.NodeIds[2]]];
+      n4 := Model.Nodes[NodeIdx[el.NodeIds[3]]];
+      n5 := Model.Nodes[NodeIdx[el.NodeIds[4]]];
+      n6 := Model.Nodes[NodeIdx[el.NodeIds[5]]];
+      n7 := Model.Nodes[NodeIdx[el.NodeIds[6]]];
+      n8 := Model.Nodes[NodeIdx[el.NodeIds[7]]];
+      e1x := n2.X-n1.X; e1y := n2.Y-n1.Y; e1z := n2.Z-n1.Z;
+      e2x := n4.X-n1.X; e2y := n4.Y-n1.Y; e2z := n4.Z-n1.Z;
+      e1Len := Sqrt(e1x*e1x + e1y*e1y + e1z*e1z);
+      e2Len := Sqrt(e2x*e2x + e2y*e2y + e2z*e2z);
+      if e1Len <= 0 then
+        Errs.Add(Format('Element %d: shellq8 nodes 1 and 2 coincide (zero-length edge)', [el.Id]))
+      else if e2Len <= 0 then
+        Errs.Add(Format('Element %d: shellq8 nodes 1 and 4 coincide (zero-length edge)', [el.Id]))
+      else
+      begin
+        nx := e1y*e2z - e1z*e2y;
+        ny := e1z*e2x - e1x*e2z;
+        nz := e1x*e2y - e1y*e2x;
+        nLen := Sqrt(nx*nx + ny*ny + nz*nz);
+        if nLen <= 0 then
+          Errs.Add(Format('Element %d: shellq8 nodes 1, 2, and 4 are collinear (degenerate quad)', [el.Id]))
+        else
+        begin
+          charLen := e1Len;
+          if e2Len > charLen then charLen := e2Len;
+          d3x := n3.X-n1.X; d3y := n3.Y-n1.Y; d3z := n3.Z-n1.Z;
+          outOfPlane := Abs((d3x*nx + d3y*ny + d3z*nz) / nLen);
+          if outOfPlane > 0.01 * charLen then
+            Errs.Add(Format('Element %d: shellq8 is not flat -- corner node %d is %.4g%% of the element''s characteristic edge length out of the plane through nodes %d, %d, %d',
+              [el.Id, el.NodeIds[2], 100.0*outOfPlane/charLen, el.NodeIds[0], el.NodeIds[1], el.NodeIds[3]]))
+          else
+          begin
+            CheckQ8MidsideNode(el.Id, el.NodeIds[4], n1, n2, n5, charLen);
+            CheckQ8MidsideNode(el.Id, el.NodeIds[5], n2, n3, n6, charLen);
+            CheckQ8MidsideNode(el.Id, el.NodeIds[6], n3, n4, n7, charLen);
+            CheckQ8MidsideNode(el.Id, el.NodeIds[7], n4, n1, n8, charLen);
+          end;
         end;
       end;
     end;

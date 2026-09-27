@@ -134,8 +134,8 @@ function DofOffset(const Dof: string): Integer; // 0..5, or -1 if invalid
 function IsRotationalDof(Offset: Integer): Boolean;
 
 // How many dofs/node an element type needs: 3 for a truss (translations
-// only), 6 for a beam or shellq4 (translations + rotations). 0 =
-// unrecognized type.
+// only), 6 for a beam, shellq4, or shellq8 (translations + rotations).
+// 0 = unrecognized type.
 function DofsPerNodeForElementType(const ElementType: string): Integer;
 
 implementation
@@ -170,6 +170,7 @@ begin
   if ElementType = 'truss' then Result := 3
   else if ElementType = 'beam' then Result := 6
   else if ElementType = 'shellq4' then Result := 6
+  else if ElementType = 'shellq8' then Result := 6
   else Result := 0;
 end;
 

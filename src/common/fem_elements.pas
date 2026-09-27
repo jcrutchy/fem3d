@@ -21,6 +21,13 @@ function NewElemMatrix(N: Integer): TElemMatrix;
 // per-property override); revisit if a model ever needs to tune it.
 const ShellDrillFactor = 1.0E-4;
 
+// Default transverse shear correction factor for ElementStiffnessFor's
+// shellq8 dispatch -- see QuadPlateMindlinStiffnessQ8Local's
+// ShearCorrectionFactor parameter. 5/6 is the standard Reissner value
+// for a rectangular cross-section. Not yet exposed in the model format,
+// same status as ShellDrillFactor above.
+const ShellQ8ShearFactor = 5.0 / 6.0;
+
 // 2-node space truss (axial-only bar), 6x6, dof order per node [x,y,z].
 function TrussStiffness3D(E, A, x1, y1, z1, x2, y2, z2: Double): TElemMatrix;
 
@@ -59,6 +66,132 @@ function QuadMembraneStiffnessLocal(E, Nu, Thickness: Double;
 // itself is patch-test verified.
 function QuadMembraneStiffness3D(E, Nu, Thickness: Double;
   x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4: Double): TElemMatrix;
+
+// 8-node quadratic serendipity ("Q8") quad, membrane (in-plane)
+// stiffness only, LOCAL 2D formulation -- same role as
+// QuadMembraneStiffnessLocal, quadratic instead of bilinear. 16x16,
+// local dof order per node [u, v] (nodes 1-4 corners, 5-8 edge
+// midpoints, same numbering as fem_plate_shapefuncs.Quad8ShapeFuncsAt).
+// Plane-stress constitutive law, full 3x3 Gauss integration (membrane
+// terms don't lock under full integration -- unlike the bending/shear
+// terms of the Mindlin plate this element will be paired with, which
+// need selective reduced integration; see fem_plate_shapefuncs'
+// QuadGaussPoints3x3 comment). This is step 1 of the Q8 Mindlin-shell
+// build (mirrors QuadMembraneStiffnessLocal's role as step 1 of the
+// Q4/DKQ shellq4 build): standalone and not yet wired into
+// ElementStiffnessFor/fem_dofmap/fem_validate. Corner/midside node
+// order and coplanarity are the caller's/fem_validate's responsibility,
+// same division as QuadMembraneStiffnessLocal.
+function QuadMembraneStiffnessQ8Local(E, Nu, Thickness: Double;
+  x1, y1, x2, y2, x3, y3, x4, y4,
+  x5, y5, x6, y6, x7, y7, x8, y8: Double): TElemMatrix;
+
+// 8-node quadratic serendipity ("Q8") quad, Mindlin-Reissner plate
+// BENDING + transverse SHEAR stiffness, LOCAL 2D formulation -- the
+// shear-deformable, thick-and-thin-capable counterpart to
+// QuadBendingStiffnessLocal's thin-plate-only DKQ. 24x24, local dof
+// order per node [w, rx, ry] -- SAME rx/ry convention as the shellq4
+// combiner (rx=+dw/dy, ry=-dw/dx in the thin-plate limit; see
+// QuadShellStiffnessLocal's KbSrcOffset/KbSign comment for the
+// derivation this matches), so a future Q8 shell combiner can reuse
+// that same remap logic. Unlike DKQ, rx/ry here are genuinely
+// INDEPENDENT rotation fields (not slaved to dw/dx, dw/dy) -- that
+// independence is what lets this element represent transverse shear
+// deformation at all, which is the whole point of choosing this over
+// extending DKQ to 8 nodes (see the chat's back-pocket "option B").
+//
+// Curvatures (matching DKQ's own kappa_x=d(w_x)/dx, kappa_y=d(w_y)/dy,
+// kappa_xy=d(w_x)/dy+d(w_y)/dx convention exactly, substituting
+// w_x=-ry, w_y=rx per the same remap DKQ/shell already use):
+//   kappa_x  = -d(ry)/dx
+//   kappa_y  =  d(rx)/dy
+//   kappa_xy =  d(rx)/dx - d(ry)/dy      (engineering, i.e. 2*eps_xy-style)
+// Transverse shear strains (derived from the Mindlin through-thickness
+// kinematics u=z*ry, v=-z*rx, w=w(x,y); vanish exactly, independent of
+// the above, when rx=dw/dy and ry=-dw/dx -- i.e. this element reduces
+// to the same DKQ kinematics as thickness/shear stiffness -> infinity):
+//   gamma_xz = d(w)/dx + ry
+//   gamma_yz = d(w)/dy - rx
+//
+// Integration: FULL 3x3 Gauss on the bending block (same degree-4
+// B^T*Db*B integrand as the Q8 membrane, for the same reason -- see
+// QuadMembraneStiffnessQ8Local), but only REDUCED 2x2 Gauss on the
+// shear block. This is the standard "selective reduced integration"
+// (SRI) fix for 8-node Mindlin plates: full integration of the shear
+// term over-constrains the thin-plate limit (transverse shear strain
+// can't be driven to zero fast enough as the mesh doesn't have enough
+// zero-shear modes under full integration), locking the element far
+// too stiff in bending as thickness/span -> 0. This is a well-known
+// but nontrivial-to-verify property (unlike a patch test, "does NOT
+// lock" needs a thin-plate deflection benchmark, not just constant-
+// field checks) -- flagged as a follow-up check, not yet done here.
+//
+// ShearCorrectionFactor (k in tau=k*G*gamma) is exposed rather than
+// hardcoded, same reasoning as QuadShellStiffnessLocal's DrillFactor:
+// 5/6 is the standard value for a rectangular cross-section (Reissner);
+// other values suit other section shapes/derivations (Mindlin's own
+// pi^2/12 among them). Isotropic material, transverse shear stiffness
+// diagonal (no Ds coupling between gamma_xz and gamma_yz) -- standard
+// for an isotropic Mindlin plate.
+//
+// Standalone and not yet wired into ElementStiffnessFor/fem_dofmap --
+// same status as QuadMembraneStiffnessQ8Local; combining this with it
+// into a full Q8 shell (paralleling QuadShellStiffnessLocal) is a
+// later step, once both are independently patch-test verified.
+function QuadPlateMindlinStiffnessQ8Local(E, Nu, Thickness, ShearCorrectionFactor: Double;
+  x1, y1, x2, y2, x3, y3, x4, y4,
+  x5, y5, x6, y6, x7, y7, x8, y8: Double): TElemMatrix;
+
+// Combined Q8 shell element: membrane (QuadMembraneStiffnessQ8Local) +
+// Mindlin bending/shear (QuadPlateMindlinStiffnessQ8Local), assembled
+// into one local 48x48 matrix (8 nodes x 6 dof), dof order per node
+// [u, v, w, rx, ry, rz] -- same convention as QuadShellStiffnessLocal.
+// UNLIKE that Q4/DKQ combiner, no sign/offset remap is needed for the
+// bending block here: QuadPlateMindlinStiffnessQ8Local was derived
+// directly in terms of this shell's own rx/ry convention (see its
+// interface comment), not DKQ's separate [w,w_x,w_y] slope convention,
+// so its [w,rx,ry] triples drop straight into shell offsets [3,4,5]
+// unchanged.
+//
+// rz (drilling) is handled exactly as QuadShellStiffnessLocal handles
+// it -- same caveat applies (neither sub-element constrains in-plane
+// corner rotation, so this is a diagonal penalty stopgap, not a proper
+// drilling-dof formulation) -- sized off the mean diagonal of this
+// element's own (16x16) membrane matrix, same DrillFactor knob and
+// same recommended 1e-4 to 1e-3 range.
+//
+// Standalone and not yet wired into ElementStiffnessFor/fem_dofmap/
+// fem_validate/native+JSON formats -- same "step 5 not yet done"
+// status as shellq4 had before it was wired in. A QuadShellStiffnessQ8_3D
+// wrapper (local-to-global, mirroring QuadShellStiffness3D) is the
+// next piece needed before wiring can start, since fem3d models are
+// specified in global 3D coordinates.
+function QuadShellStiffnessQ8Local(E, Nu, Thickness, ShearCorrectionFactor, DrillFactor: Double;
+  x1, y1, x2, y2, x3, y3, x4, y4,
+  x5, y5, x6, y6, x7, y7, x8, y8: Double): TElemMatrix;
+
+// QuadShellStiffnessQ8Local wrapped with the same local-basis
+// construction QuadShellStiffness3D uses (local frame built from
+// CORNER nodes 1,2,4 only -- ex along edge 1-2, ez the normal from
+// edges 1-2 and 1-4, ey completing a right-handed set -- same as the
+// Q4 case; the midside nodes 5-8 don't define the plane, they're
+// projected into it along with the corners). Global 48x48 (8 nodes x
+// 6 dof [x,y,z,rx,ry,rz]). Rotation dof transform the same way
+// translations do under a pure change of orthonormal frame (T applied
+// per node, block-diagonal [[Lam,0],[0,Lam]] in each node's 6x6 block,
+// same as QuadShellStiffness3D).
+//
+// Flatness of all 8 nodes (in particular the midside nodes actually
+// lying in the corner-defined plane, not just near it) is NOT checked
+// here -- that's fem_validate's job once this is wired in, same
+// division of responsibility QuadShellStiffness3D already has with
+// the Q4 flatness check.
+//
+// NOT wired into fem_dofmap/fem_validate/ElementStiffnessFor yet --
+// same status note as QuadShellStiffness3D itself.
+function QuadShellStiffnessQ8_3D(E, Nu, Thickness, ShearCorrectionFactor, DrillFactor: Double;
+  x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4,
+  x5, y5, z5, x6, y6, z6, x7, y7, z7, x8, y8, z8: Double): TElemMatrix;
 
 // 4-node DKQ (Discrete Kirchhoff Quadrilateral) thin-plate bending
 // stiffness, LOCAL 2D formulation: takes the 4 corners already
@@ -365,6 +498,396 @@ begin
         Result[i, jc] := Result[i, jc] + cE * Thickness * detJ * gp[g].Weight;
       end;
   end;
+end;
+
+function QuadMembraneStiffnessQ8Local(E, Nu, Thickness: Double;
+  x1, y1, x2, y2, x3, y3, x4, y4,
+  x5, y5, x6, y6, x7, y7, x8, y8: Double): TElemMatrix;
+var
+  lx, ly: array[1..8] of Double;
+  D: array[1..3, 1..3] of Double;
+  gp: TGaussPointArray9;
+  sf: TQuad8ShapeFuncs;
+  g, i, jc, k: Integer;
+  J11, J12, J21, J22, detJ, invJ11, invJ12, invJ21, invJ22: Double;
+  dNdx, dNdy: array[1..8] of Double;
+  B: array[1..3, 1..16] of Double;
+  BtD: array[1..16, 1..3] of Double;
+  acc, cE: Double;
+begin
+  lx[1] := x1; ly[1] := y1;
+  lx[2] := x2; ly[2] := y2;
+  lx[3] := x3; ly[3] := y3;
+  lx[4] := x4; ly[4] := y4;
+  lx[5] := x5; ly[5] := y5;
+  lx[6] := x6; ly[6] := y6;
+  lx[7] := x7; ly[7] := y7;
+  lx[8] := x8; ly[8] := y8;
+
+  cE := E / (1.0 - Nu * Nu);
+  D[1,1] := cE;        D[1,2] := cE * Nu;   D[1,3] := 0;
+  D[2,1] := cE * Nu;   D[2,2] := cE;        D[2,3] := 0;
+  D[3,1] := 0;         D[3,2] := 0;         D[3,3] := cE * (1.0 - Nu) / 2.0;
+
+  Result := NewElemMatrix(16);
+  for i := 1 to 16 do
+    for jc := 1 to 16 do
+      Result[i, jc] := 0;
+
+  // --- 3x3 Gauss integration of B^T * D * B * thickness over the element ---
+  gp := QuadGaussPoints3x3;
+  for g := 0 to NGaussPlateQ8 - 1 do
+  begin
+    sf := Quad8ShapeFuncsAt(gp[g].Xi, gp[g].Eta);
+
+    J11 := 0; J12 := 0; J21 := 0; J22 := 0;
+    for i := 1 to 8 do
+    begin
+      J11 := J11 + sf.dNdXi[i]  * lx[i];
+      J12 := J12 + sf.dNdXi[i]  * ly[i];
+      J21 := J21 + sf.dNdEta[i] * lx[i];
+      J22 := J22 + sf.dNdEta[i] * ly[i];
+    end;
+    detJ := J11 * J22 - J12 * J21;
+    if detJ <= 0 then
+      raise Exception.Create('Q8 quad membrane element has non-positive Jacobian determinant (inverted or degenerate shape)');
+    invJ11 :=  J22 / detJ; invJ12 := -J12 / detJ;
+    invJ21 := -J21 / detJ; invJ22 :=  J11 / detJ;
+
+    for i := 1 to 8 do
+    begin
+      dNdx[i] := invJ11 * sf.dNdXi[i] + invJ12 * sf.dNdEta[i];
+      dNdy[i] := invJ21 * sf.dNdXi[i] + invJ22 * sf.dNdEta[i];
+    end;
+
+    for i := 1 to 3 do
+      for jc := 1 to 16 do
+        B[i, jc] := 0;
+    for i := 1 to 8 do
+    begin
+      B[1, 2*i - 1] := dNdx[i];
+      B[2, 2*i]     := dNdy[i];
+      B[3, 2*i - 1] := dNdy[i];
+      B[3, 2*i]     := dNdx[i];
+    end;
+
+    // BtD = B^T * D  (16x3)
+    for i := 1 to 16 do
+      for jc := 1 to 3 do
+      begin
+        BtD[i, jc] := 0;
+        for k := 1 to 3 do
+          BtD[i, jc] := BtD[i, jc] + B[k, i] * D[k, jc];
+      end;
+
+    // Result += (BtD * B) * thickness * detJ * weight
+    for i := 1 to 16 do
+      for jc := 1 to 16 do
+      begin
+        acc := 0;
+        for k := 1 to 3 do
+          acc := acc + BtD[i, k] * B[k, jc];
+        Result[i, jc] := Result[i, jc] + acc * Thickness * detJ * gp[g].Weight;
+      end;
+  end;
+end;
+
+function QuadPlateMindlinStiffnessQ8Local(E, Nu, Thickness, ShearCorrectionFactor: Double;
+  x1, y1, x2, y2, x3, y3, x4, y4,
+  x5, y5, x6, y6, x7, y7, x8, y8: Double): TElemMatrix;
+var
+  lx, ly: array[1..8] of Double;
+  Db: array[1..3, 1..3] of Double;
+  DsDiag: Double; // Ds is k*G*t*I(2x2); only the diagonal value is needed
+  Dfac, Gmod: Double;
+  gp3: TGaussPointArray9;
+  gp2: TGaussPointArray;
+  sf: TQuad8ShapeFuncs;
+  g, i, jc, k: Integer;
+  J11, J12, J21, J22, detJ, invJ11, invJ12, invJ21, invJ22: Double;
+  dNdx, dNdy: array[1..8] of Double;
+  Bb: array[1..3, 1..24] of Double;
+  Bs: array[1..2, 1..24] of Double;
+  BbtDb: array[1..24, 1..3] of Double;
+  BstDs: array[1..24, 1..2] of Double;
+  acc: Double;
+begin
+  lx[1] := x1; ly[1] := y1;
+  lx[2] := x2; ly[2] := y2;
+  lx[3] := x3; ly[3] := y3;
+  lx[4] := x4; ly[4] := y4;
+  lx[5] := x5; ly[5] := y5;
+  lx[6] := x6; ly[6] := y6;
+  lx[7] := x7; ly[7] := y7;
+  lx[8] := x8; ly[8] := y8;
+
+  Dfac := (Thickness * Thickness * Thickness / 12.0) * (E / (1.0 - Nu * Nu));
+  Db[1,1] := Dfac;      Db[1,2] := Dfac * Nu; Db[1,3] := 0;
+  Db[2,1] := Dfac * Nu; Db[2,2] := Dfac;      Db[2,3] := 0;
+  Db[3,1] := 0;         Db[3,2] := 0;         Db[3,3] := Dfac * (1.0 - Nu) / 2.0;
+
+  Gmod := E / (2.0 * (1.0 + Nu));
+  DsDiag := ShearCorrectionFactor * Gmod * Thickness;
+
+  Result := NewElemMatrix(24);
+  for i := 1 to 24 do
+    for jc := 1 to 24 do
+      Result[i, jc] := 0;
+
+  // --- bending block: FULL 3x3 Gauss ---
+  gp3 := QuadGaussPoints3x3;
+  for g := 0 to NGaussPlateQ8 - 1 do
+  begin
+    sf := Quad8ShapeFuncsAt(gp3[g].Xi, gp3[g].Eta);
+
+    J11 := 0; J12 := 0; J21 := 0; J22 := 0;
+    for i := 1 to 8 do
+    begin
+      J11 := J11 + sf.dNdXi[i]  * lx[i];
+      J12 := J12 + sf.dNdXi[i]  * ly[i];
+      J21 := J21 + sf.dNdEta[i] * lx[i];
+      J22 := J22 + sf.dNdEta[i] * ly[i];
+    end;
+    detJ := J11 * J22 - J12 * J21;
+    if detJ <= 0 then
+      raise Exception.Create('Q8 Mindlin plate element has non-positive Jacobian determinant (inverted or degenerate shape)');
+    invJ11 :=  J22 / detJ; invJ12 := -J12 / detJ;
+    invJ21 := -J21 / detJ; invJ22 :=  J11 / detJ;
+
+    for i := 1 to 8 do
+    begin
+      dNdx[i] := invJ11 * sf.dNdXi[i] + invJ12 * sf.dNdEta[i];
+      dNdy[i] := invJ21 * sf.dNdXi[i] + invJ22 * sf.dNdEta[i];
+    end;
+
+    for i := 1 to 3 do
+      for jc := 1 to 24 do
+        Bb[i, jc] := 0;
+    for i := 1 to 8 do
+    begin
+      // kappa_x = -d(ry)/dx  -> row 1, ry dof (col 3i)
+      Bb[1, 3*i]     := -dNdx[i];
+      // kappa_y = d(rx)/dy   -> row 2, rx dof (col 3i-1)
+      Bb[2, 3*i - 1] :=  dNdy[i];
+      // kappa_xy = d(rx)/dx - d(ry)/dy -> row 3, both rx and ry dof
+      Bb[3, 3*i - 1] :=  dNdx[i];
+      Bb[3, 3*i]     := -dNdy[i];
+    end;
+
+    for i := 1 to 24 do
+      for jc := 1 to 3 do
+      begin
+        BbtDb[i, jc] := 0;
+        for k := 1 to 3 do
+          BbtDb[i, jc] := BbtDb[i, jc] + Bb[k, i] * Db[k, jc];
+      end;
+
+    for i := 1 to 24 do
+      for jc := 1 to 24 do
+      begin
+        acc := 0;
+        for k := 1 to 3 do
+          acc := acc + BbtDb[i, k] * Bb[k, jc];
+        Result[i, jc] := Result[i, jc] + acc * detJ * gp3[g].Weight;
+      end;
+  end;
+
+  // --- shear block: REDUCED 2x2 Gauss (selective reduced integration) ---
+  gp2 := QuadGaussPoints2x2;
+  for g := 0 to NGaussPlate - 1 do
+  begin
+    sf := Quad8ShapeFuncsAt(gp2[g].Xi, gp2[g].Eta);
+
+    J11 := 0; J12 := 0; J21 := 0; J22 := 0;
+    for i := 1 to 8 do
+    begin
+      J11 := J11 + sf.dNdXi[i]  * lx[i];
+      J12 := J12 + sf.dNdXi[i]  * ly[i];
+      J21 := J21 + sf.dNdEta[i] * lx[i];
+      J22 := J22 + sf.dNdEta[i] * ly[i];
+    end;
+    detJ := J11 * J22 - J12 * J21;
+    if detJ <= 0 then
+      raise Exception.Create('Q8 Mindlin plate element has non-positive Jacobian determinant (inverted or degenerate shape)');
+    invJ11 :=  J22 / detJ; invJ12 := -J12 / detJ;
+    invJ21 := -J21 / detJ; invJ22 :=  J11 / detJ;
+
+    for i := 1 to 8 do
+    begin
+      dNdx[i] := invJ11 * sf.dNdXi[i] + invJ12 * sf.dNdEta[i];
+      dNdy[i] := invJ21 * sf.dNdXi[i] + invJ22 * sf.dNdEta[i];
+    end;
+
+    for i := 1 to 2 do
+      for jc := 1 to 24 do
+        Bs[i, jc] := 0;
+    for i := 1 to 8 do
+    begin
+      // gamma_xz = d(w)/dx + ry   -> row 1, w dof (col 3i-2) and ry dof (col 3i)
+      Bs[1, 3*i - 2] := dNdx[i];
+      Bs[1, 3*i]     := sf.N[i];
+      // gamma_yz = d(w)/dy - rx  -> row 2, w dof (col 3i-2) and rx dof (col 3i-1)
+      Bs[2, 3*i - 2] := dNdy[i];
+      Bs[2, 3*i - 1] := -sf.N[i];
+    end;
+
+    // BstDs = Bs^T * Ds, Ds = DsDiag * I(2x2), so this is just DsDiag * Bs^T
+    for i := 1 to 24 do
+      for jc := 1 to 2 do
+        BstDs[i, jc] := DsDiag * Bs[jc, i];
+
+    for i := 1 to 24 do
+      for jc := 1 to 24 do
+      begin
+        acc := 0;
+        for k := 1 to 2 do
+          acc := acc + BstDs[i, k] * Bs[k, jc];
+        Result[i, jc] := Result[i, jc] + acc * detJ * gp2[g].Weight;
+      end;
+  end;
+end;
+
+function QuadShellStiffnessQ8Local(E, Nu, Thickness, ShearCorrectionFactor, DrillFactor: Double;
+  x1, y1, x2, y2, x3, y3, x4, y4,
+  x5, y5, x6, y6, x7, y7, x8, y8: Double): TElemMatrix;
+var
+  Km: TElemMatrix; // 16x16, local dof [u,v]*8
+  Kp: TElemMatrix; // 24x24, local dof [w,rx,ry]*8
+  i, jc, nodeA, nodeB, p, q, srcRow, srcCol, destRow, destCol: Integer;
+  diagSum, kDrill: Double;
+begin
+  Km := QuadMembraneStiffnessQ8Local(E, Nu, Thickness,
+    x1, y1, x2, y2, x3, y3, x4, y4, x5, y5, x6, y6, x7, y7, x8, y8);
+  Kp := QuadPlateMindlinStiffnessQ8Local(E, Nu, Thickness, ShearCorrectionFactor,
+    x1, y1, x2, y2, x3, y3, x4, y4, x5, y5, x6, y6, x7, y7, x8, y8);
+
+  Result := NewElemMatrix(48);
+  for i := 1 to 48 do
+    for jc := 1 to 48 do
+      Result[i, jc] := 0;
+
+  // --- membrane block: node dof [u,v] (Km offsets 1,2) -> shell
+  // offsets [1,2], no sign change (same as the Q4 combiner). ---
+  for nodeA := 0 to 7 do
+    for nodeB := 0 to 7 do
+      for p := 1 to 2 do
+        for q := 1 to 2 do
+        begin
+          srcRow := 2*nodeA + p;
+          srcCol := 2*nodeB + q;
+          destRow := 6*nodeA + p;
+          destCol := 6*nodeB + q;
+          Result[destRow, destCol] := Km[srcRow, srcCol];
+        end;
+
+  // --- bending+shear block: node dof [w,rx,ry] (Kp offsets 1,2,3) ->
+  // shell offsets [3,4,5], DIRECT copy -- no remap needed (see this
+  // function's interface comment for why, unlike the Q4/DKQ case). ---
+  for nodeA := 0 to 7 do
+    for nodeB := 0 to 7 do
+      for p := 1 to 3 do
+        for q := 1 to 3 do
+        begin
+          srcRow := 3*nodeA + p;
+          srcCol := 3*nodeB + q;
+          destRow := 6*nodeA + 2 + p;
+          destCol := 6*nodeB + 2 + q;
+          Result[destRow, destCol] := Kp[srcRow, srcCol];
+        end;
+
+  // --- drilling (rz, shell offset 6): same stopgap diagonal penalty
+  // as QuadShellStiffnessLocal, sized off this element's own (16x16)
+  // membrane matrix's mean diagonal. ---
+  diagSum := 0;
+  for i := 1 to 16 do
+    diagSum := diagSum + Km[i, i];
+  kDrill := DrillFactor * (diagSum / 16.0);
+  for nodeA := 0 to 7 do
+    Result[6*nodeA + 6, 6*nodeA + 6] := kDrill;
+end;
+
+function QuadShellStiffnessQ8_3D(E, Nu, Thickness, ShearCorrectionFactor, DrillFactor: Double;
+  x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4,
+  x5, y5, z5, x6, y6, z6, x7, y7, z7, x8, y8, z8: Double): TElemMatrix;
+var
+  ex, ey, ez, edge1, edge2, nrm, rel: TVec3;
+  gx, gy, gz: array[1..8] of Double; // global node coords, for the projection loop
+  lx, ly: array[1..8] of Double;
+  KeLocal: TElemMatrix; // 48x48
+  T: array[1..48, 1..48] of Double;
+  KeT: array[1..48, 1..48] of Double;
+  i, jc, k, blk: Integer;
+begin
+  // Same local-basis construction as QuadShellStiffness3D (see its
+  // comments) -- from the CORNER nodes only (1, 2, 4); midside nodes
+  // 5-8 are projected into that same plane just below, not used to
+  // define it.
+  edge1[0] := x2 - x1; edge1[1] := y2 - y1; edge1[2] := z2 - z1;
+  edge2[0] := x4 - x1; edge2[1] := y4 - y1; edge2[2] := z4 - z1;
+  if VNorm(edge1) <= 0 then
+    raise Exception.Create('Q8 quad shell element has a zero-length 1-2 edge (coincident nodes)');
+  ex := VNormalize(edge1);
+  nrm := VCross(edge1, edge2);
+  if VNorm(nrm) <= 0 then
+    raise Exception.Create('Q8 quad shell element is degenerate (corner nodes 1, 2, 4 are collinear)');
+  ez := VNormalize(nrm);
+  ey := VCross(ez, ex);
+
+  gx[1]:=x1; gy[1]:=y1; gz[1]:=z1;
+  gx[2]:=x2; gy[2]:=y2; gz[2]:=z2;
+  gx[3]:=x3; gy[3]:=y3; gz[3]:=z3;
+  gx[4]:=x4; gy[4]:=y4; gz[4]:=z4;
+  gx[5]:=x5; gy[5]:=y5; gz[5]:=z5;
+  gx[6]:=x6; gy[6]:=y6; gz[6]:=z6;
+  gx[7]:=x7; gy[7]:=y7; gz[7]:=z7;
+  gx[8]:=x8; gy[8]:=y8; gz[8]:=z8;
+
+  lx[1] := 0; ly[1] := 0;
+  for i := 2 to 8 do
+  begin
+    rel[0] := gx[i] - x1; rel[1] := gy[i] - y1; rel[2] := gz[i] - z1;
+    lx[i] := rel[0]*ex[0] + rel[1]*ex[1] + rel[2]*ex[2];
+    ly[i] := rel[0]*ey[0] + rel[1]*ey[1] + rel[2]*ey[2];
+  end;
+
+  KeLocal := QuadShellStiffnessQ8Local(E, Nu, Thickness, ShearCorrectionFactor, DrillFactor,
+    lx[1], ly[1], lx[2], ly[2], lx[3], ly[3], lx[4], ly[4],
+    lx[5], ly[5], lx[6], ly[6], lx[7], ly[7], lx[8], ly[8]);
+
+  // T: global (x,y,z,rx,ry,rz)*8 -> local (u,v,w,rx,ry,rz)*8, same
+  // block-diagonal-per-node [[Lam,0],[0,Lam]] pattern as
+  // QuadShellStiffness3D, just repeated for 8 nodes instead of 4.
+  for i := 1 to 48 do
+    for jc := 1 to 48 do
+      T[i, jc] := 0;
+  for blk := 0 to 7 do
+  begin
+    T[6*blk+1, 6*blk+1] := ex[0]; T[6*blk+1, 6*blk+2] := ex[1]; T[6*blk+1, 6*blk+3] := ex[2];
+    T[6*blk+2, 6*blk+1] := ey[0]; T[6*blk+2, 6*blk+2] := ey[1]; T[6*blk+2, 6*blk+3] := ey[2];
+    T[6*blk+3, 6*blk+1] := ez[0]; T[6*blk+3, 6*blk+2] := ez[1]; T[6*blk+3, 6*blk+3] := ez[2];
+    T[6*blk+4, 6*blk+4] := ex[0]; T[6*blk+4, 6*blk+5] := ex[1]; T[6*blk+4, 6*blk+6] := ex[2];
+    T[6*blk+5, 6*blk+4] := ey[0]; T[6*blk+5, 6*blk+5] := ey[1]; T[6*blk+5, 6*blk+6] := ey[2];
+    T[6*blk+6, 6*blk+4] := ez[0]; T[6*blk+6, 6*blk+5] := ez[1]; T[6*blk+6, 6*blk+6] := ez[2];
+  end;
+
+  // KeT = KeLocal * T
+  for i := 1 to 48 do
+    for jc := 1 to 48 do
+    begin
+      KeT[i, jc] := 0;
+      for k := 1 to 48 do
+        KeT[i, jc] := KeT[i, jc] + KeLocal[i, k] * T[k, jc];
+    end;
+
+  // Result = T^T * KeT
+  Result := NewElemMatrix(48);
+  for i := 1 to 48 do
+    for jc := 1 to 48 do
+    begin
+      Result[i, jc] := 0;
+      for k := 1 to 48 do
+        Result[i, jc] := Result[i, jc] + T[k, i] * KeT[k, jc];
+    end;
 end;
 
 function QuadMembraneStiffness3D(E, Nu, Thickness: Double;
@@ -762,7 +1285,7 @@ function ElementStiffnessFor(const Model: TModel;
 var
   prop: TProperty;
   mat: TMaterial;
-  n1, n2, n3, n4: TNode;
+  n1, n2, n3, n4, n5, n6, n7, n8: TNode;
   G: Double;
   refVec: array[0..2] of Double;
 begin
@@ -778,6 +1301,18 @@ begin
     n4 := Model.Nodes[NodeIdx[el.NodeIds[3]]];
     Result := QuadShellStiffness3D(mat.E, mat.Nu, prop.Thickness, ShellDrillFactor,
       n1.X, n1.Y, n1.Z, n2.X, n2.Y, n2.Z, n3.X, n3.Y, n3.Z, n4.X, n4.Y, n4.Z);
+  end
+  else if el.ElementType = 'shellq8' then
+  begin
+    n3 := Model.Nodes[NodeIdx[el.NodeIds[2]]];
+    n4 := Model.Nodes[NodeIdx[el.NodeIds[3]]];
+    n5 := Model.Nodes[NodeIdx[el.NodeIds[4]]];
+    n6 := Model.Nodes[NodeIdx[el.NodeIds[5]]];
+    n7 := Model.Nodes[NodeIdx[el.NodeIds[6]]];
+    n8 := Model.Nodes[NodeIdx[el.NodeIds[7]]];
+    Result := QuadShellStiffnessQ8_3D(mat.E, mat.Nu, prop.Thickness, ShellQ8ShearFactor, ShellDrillFactor,
+      n1.X, n1.Y, n1.Z, n2.X, n2.Y, n2.Z, n3.X, n3.Y, n3.Z, n4.X, n4.Y, n4.Z,
+      n5.X, n5.Y, n5.Z, n6.X, n6.Y, n6.Z, n7.X, n7.Y, n7.Z, n8.X, n8.Y, n8.Z);
   end
   else // 'beam' -- fem_validate guarantees no other type reaches here
   begin
