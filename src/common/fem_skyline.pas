@@ -39,7 +39,7 @@ type
     constructor Create(ANeq: Integer; const Height: TIntArray);
     procedure AddToK(ARow, ACol: Integer; AValue: Double);
     function GetEntry(ARow, ACol: Integer): Double; // debug helper: 0 if outside stored skyline
-    procedure Factorize;
+    procedure Factorize(PivotTolerance: Double = 1.0E-10);
     function Solve(const RHS: TDoubleArray): TDoubleArray;
     property Neq: Integer read FNeq;
     property NWK: Integer read FNWK;
@@ -127,7 +127,7 @@ begin
     Result := FAA[FMaxa[c] + (c - r)];
 end;
 
-procedure TSkylineMatrix.Factorize;
+procedure TSkylineMatrix.Factorize(PivotTolerance: Double);
 var
   j, i, k, first_i, first_j, kl: Integer;
   c, dk, relTol: Double;
@@ -142,12 +142,13 @@ begin
       FMaxOrigDiag := Abs(FAA[FMaxa[j]]);
   if FMaxOrigDiag = 0.0 then
     FMaxOrigDiag := 1.0;
-  relTol := 1e-10 * FMaxOrigDiag;
+  relTol := PivotTolerance * FMaxOrigDiag;
 
   if (FNeq >= 1) and (Abs(FAA[FMaxa[1]]) < relTol) then
     raise Exception.CreateFmt(
       'Singular or near-singular system: zero pivot at equation %d ' +
-      '(check for unconstrained rigid-body motion or a disconnected part of the model)', [1]);
+      '(check for unconstrained rigid-body motion or a disconnected part of the model; ' +
+      'if the model is genuinely fine but extremely thin/soft, see PivotTolerance in [SOLVERPARAMS])', [1]);
 
   for j := 2 to FNeq do
   begin
@@ -173,7 +174,8 @@ begin
     if Abs(dk) < relTol then
       raise Exception.CreateFmt(
         'Singular or near-singular system: zero pivot at equation %d ' +
-        '(check for unconstrained rigid-body motion or a disconnected part of the model)', [j]);
+        '(check for unconstrained rigid-body motion or a disconnected part of the model; ' +
+        'if the model is genuinely fine but extremely thin/soft, see PivotTolerance in [SOLVERPARAMS])', [j]);
     FAA[FMaxa[j]] := dk;
   end;
   FFactorized := True;

@@ -20,7 +20,9 @@ Units=SI (N, m, Pa)
 
 [ELEMENTS]
 # id, type, node1, node2, node3, node4, property
-1, shellq4, 1, 2, 3, 4, 1
+# Corner nodes listed CLOCKWISE (1, 4, 3, 2) instead of 016's counter-
+# clockwise (1, 2, 3, 4): must be accepted and give identical results.
+1, shellq4, 1, 4, 3, 2, 1
 
 [FREEDOMCASE default]
 # node, dof, value -- fixed edge (1,4) fully clamped; loaded edge (2,3)

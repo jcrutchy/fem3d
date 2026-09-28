@@ -121,6 +121,22 @@ identical results to single-threaded on every regression case), but
 their relative performance claim in this file should be read as
 "measured on 1 core," not "true in general."
 
+**Update — spin-wait now yields.** The starvation described above was a
+real defect in the spin worker, not an inherent cost of spinning: its
+wait loop was a bare `while ... do ;` with no pause and no yield, so on
+an oversubscribed machine (fewer free cores than threads — a container,
+a VM, a busy CI runner, hyperthreads sharing a core) the waiter burned
+the very core the working thread needed. It now spins with the x86
+`PAUSE` hint for a bounded number of iterations (the fast path this
+mode exists for), then yields its time slice to the scheduler on every
+further iteration (`SpinUntilSet` in `fem_pcg.pas`). Re-measured on the
+same single-core machine with 4 threads on a 576-element plate:
+spin-sync 5.78 s before, 1.09 s after; event-sync 0.8–0.9 s (never
+affected). Results are bit-identical across all four combinations. The
+caveat above still stands — none of this shows a parallel *speedup*,
+which needs genuine multi-core hardware — but spin mode no longer
+degrades badly when it lands somewhere it can't win.
+
 `ElementCountThreadThreshold` (`fem_pcg.pas`) stays at a deliberately
 high default (50,000 elements) so threading remains off by default until
 it's validated somewhere the question is actually answerable. Both it

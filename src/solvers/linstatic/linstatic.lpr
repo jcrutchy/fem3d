@@ -67,6 +67,8 @@ var
   UseBareKeys: Boolean;
   KeyPrefix: string;
   OutF: Text;
+  nTruss, nBeam, nShellQ4, nShellQ8, nOtherType: Integer;
+  otherTypeSuffix: string;
 
 function FindLoadCaseIndex(const Id: string): Integer;
 var
@@ -79,6 +81,29 @@ begin
       Result := k;
       Exit;
     end;
+end;
+
+// Short, human-readable number formatting for the verbose narrative
+// output (vs. EmitCaseResults' %.17e machine-precision format) -- plain
+// FloatToStr, same locale-independent settings (FS) used everywhere
+// else in this program.
+function D2Str(V: Double; const Fmt: TFormatSettings): string;
+begin
+  Result := FloatToStr(V, Fmt);
+end;
+
+// "1.5*dead + 1.2*live"-style description of a combination's terms, for
+// the verbose narrative line printed alongside a combination's results.
+function CombinationTermsDescription(const Comb: TCombination): string;
+var
+  ti: Integer;
+begin
+  Result := '';
+  for ti := 0 to High(Comb.Terms) do
+  begin
+    if ti > 0 then Result := Result + ' + ';
+    Result := Result + Format('%s*%s', [D2Str(Comb.Terms[ti].Factor, FS), Comb.Terms[ti].LoadCaseId]);
+  end;
 end;
 
 procedure EmitCaseResults(const CasePrefix: string; const U, R: TDoubleArray);
@@ -96,6 +121,133 @@ begin
       if DofMap.GlobalToEq[ggi] = 0 then
         WriteLn(OutF, Format('%sREACT.%d.%s=%.17e', [CasePrefix, Model.Nodes[ii].Id, DofNames[jj], R[ggi]], FS));
     end;
+end;
+
+// ---- Verbose-mode narrative helpers -----------------------------------
+// Every line these print is '#'-prefixed, same convention as the 3
+// existing header comment lines -- so nothing here changes what
+// fem_regress (or any other key=value scraper) sees: ParseKV already
+// skips blank lines, '#' lines, and anything that doesn't parse as
+// key=number. These are purely additive.
+
+// Freedom case FC's constraint set, AFTER BuildDofMap has resolved it --
+// read back from DofMap/NodeDofCounts (the actually-applied result)
+// rather than re-interpreting FC.Constraints, so this can't drift from
+// what the solver actually did with e.g. a wildcard or range spec.
+procedure PrintConstraintsBlock(const FC: TFreedomCase);
+var
+  ii, jj, ggi, nConstrained: Integer;
+begin
+  nConstrained := NDOF - NEQ;
+  WriteLn(OutF, Format('# Freedom case "%s": %d node(s), %d degree(s) of freedom total, '
+    + '%d constrained, %d free -- the free ones are what this solve is for.',
+    [FC.Id, NumNodes, NDOF, nConstrained, NEQ]));
+  if nConstrained = 0 then Exit;
+  WriteLn(OutF, '#   Constrained dof (node.dof = prescribed value; 0 = fully restrained):');
+  for ii := 0 to High(Model.Nodes) do
+    for jj := 0 to NodeDofCounts[ii] - 1 do
+    begin
+      ggi := GlobalDof(ii, jj);
+      if DofMap.GlobalToEq[ggi] = 0 then
+        WriteLn(OutF, Format('#     node %d, %s = %s',
+          [Model.Nodes[ii].Id, DofNames[jj], D2Str(DofMap.Prescribed[ggi], FS)]));
+    end;
+end;
+
+// A load case's inputs, printed BEFORE the solve -- restating the
+// "given" in a hand-calc sense, before showing the "find".
+procedure PrintLoadsBlock(const LC: TLoadCase);
+var
+  ii: Integer;
+begin
+  if Length(LC.Loads) = 0 then
+  begin
+    WriteLn(OutF, Format('# Load case "%s": no applied loads (results below come entirely from '
+      + 'the freedom case''s prescribed displacements, if any).', [LC.Id]));
+    Exit;
+  end;
+  WriteLn(OutF, Format('# Load case "%s": %d applied load(s):', [LC.Id, Length(LC.Loads)]));
+  for ii := 0 to High(LC.Loads) do
+    WriteLn(OutF, Format('#   node %d, %s = %s',
+      [LC.Loads[ii].NodeId, LC.Loads[ii].Dof, D2Str(LC.Loads[ii].Value, FS)]));
+end;
+
+// Human-readable results, one line per node with every active dof
+// together (vs. EmitCaseResults' one-line-per-dof machine format) --
+// reactions shown only where that dof was actually constrained (an
+// em-dash elsewhere, since "reaction" is meaningless at a free dof:
+// the solved equilibrium already makes the net force there exactly the
+// applied load, not some separate restraint force).
+procedure PrintResultsTable(const CaseLabel: string; const U, R: TDoubleArray);
+var
+  ii, jj, ggi: Integer;
+  line: string;
+begin
+  WriteLn(OutF, Format('# Results for %s (displacement / rotation, then reaction where restrained):', [CaseLabel]));
+  for ii := 0 to High(Model.Nodes) do
+  begin
+    if NodeDofCounts[ii] = 0 then Continue;
+    line := Format('#   node %d: ', [Model.Nodes[ii].Id]);
+    for jj := 0 to NodeDofCounts[ii] - 1 do
+    begin
+      ggi := GlobalDof(ii, jj);
+      line := line + Format('%s=%s', [DofNames[jj], D2Str(U[ggi], FS)]);
+      if DofMap.GlobalToEq[ggi] = 0 then
+        line := line + Format(' (react %s)', [D2Str(R[ggi], FS)]);
+      if jj < NodeDofCounts[ii] - 1 then line := line + ', ';
+    end;
+    WriteLn(OutF, line);
+  end;
+end;
+
+// Global force equilibrium: sum, over every node, of whichever force
+// actually acts at each translational dof in the solved system --
+// the reaction where that dof was constrained, the applied load where
+// it was free (a solved free dof's net force is the applied load, by
+// construction of the equilibrium equations solved for it) -- must sum
+// to (near) zero in x, y, and z. This isn't a hand-wavy sanity check:
+// it's the same global force balance every statics course opens with
+// (sum of all external forces on a body in equilibrium is zero), and
+// it holds for ANY linear-static solve regardless of how the model
+// mixes prescribed-displacement and applied-load boundary conditions --
+// internal element forces are self-cancelling across the assembly, so
+// only this external interface can be out of balance. A nonzero result
+// here would mean a genuine bug (an assembly, dofmap, or solve error),
+// not model error -- which is exactly why it's worth printing always,
+// not just for a tutorial audience. Rotational (moment) equilibrium
+// isn't checked here -- that needs a reference point and moment arms,
+// a follow-up if it turns out to be worth the complexity.
+procedure PrintEquilibriumCheck(const CaseLabel: string; const U, R, Applied: TDoubleArray);
+var
+  ii, jj, ggi: Integer;
+  totals: array[0..2] of Double;
+  maxMag: Double;
+  tol: Double;
+  allOk: Boolean;
+begin
+  totals[0] := 0; totals[1] := 0; totals[2] := 0;
+  maxMag := 0;
+  for ii := 0 to High(Model.Nodes) do
+    for jj := 0 to 2 do // x, y, z translational only -- see comment above
+    begin
+      if jj >= NodeDofCounts[ii] then Continue;
+      ggi := GlobalDof(ii, jj);
+      if DofMap.GlobalToEq[ggi] = 0 then
+        totals[jj] := totals[jj] + R[ggi]
+      else
+        totals[jj] := totals[jj] + Applied[ggi];
+      if Abs(R[ggi]) > maxMag then maxMag := Abs(R[ggi]);
+      if Abs(Applied[ggi]) > maxMag then maxMag := Abs(Applied[ggi]);
+    end;
+  tol := Model.SolverParams.Tolerance * (maxMag + 1.0);
+  allOk := (Abs(totals[0]) <= tol) and (Abs(totals[1]) <= tol) and (Abs(totals[2]) <= tol);
+  WriteLn(OutF, Format('# Equilibrium check for %s (sum of all external forces should be ~0):', [CaseLabel]));
+  if allOk then
+    WriteLn(OutF, Format('#   sum Fx=%s, sum Fy=%s, sum Fz=%s -- OK',
+      [D2Str(totals[0], FS), D2Str(totals[1], FS), D2Str(totals[2], FS)]))
+  else
+    WriteLn(OutF, Format('#   sum Fx=%s, sum Fy=%s, sum Fz=%s -- WARNING: out of balance beyond tolerance -- likely a solver bug, not a model issue',
+      [D2Str(totals[0], FS), D2Str(totals[1], FS), D2Str(totals[2], FS)]));
 end;
 
 begin
@@ -160,6 +312,37 @@ begin
   WriteLn(OutF, Format('# nodes=%d elements=%d freedom_cases=%d load_cases=%d combinations=%d',
     [NumNodes, Length(Model.Elements), Length(Model.FreedomCases), Length(Model.LoadCases), Length(Model.Combinations)]));
 
+  if Model.SolverParams.Verbose then
+  begin
+    nTruss := 0; nBeam := 0; nShellQ4 := 0; nShellQ8 := 0; nOtherType := 0;
+    for ei := 0 to High(Model.Elements) do
+      if Model.Elements[ei].ElementType = 'truss' then Inc(nTruss)
+      else if Model.Elements[ei].ElementType = 'beam' then Inc(nBeam)
+      else if Model.Elements[ei].ElementType = 'shellq4' then Inc(nShellQ4)
+      else if Model.Elements[ei].ElementType = 'shellq8' then Inc(nShellQ8)
+      else Inc(nOtherType);
+    if nOtherType > 0 then
+      otherTypeSuffix := Format(', %d of an unrecognized type', [nOtherType])
+    else
+      otherTypeSuffix := '';
+
+    WriteLn(OutF, '#');
+    WriteLn(OutF, '# linstatic solves Ku=F for one or more static load cases: assembles the');
+    WriteLn(OutF, '# global stiffness matrix K from every element, applies each freedom');
+    WriteLn(OutF, '# case''s constraints (removing restrained dof, folding any prescribed');
+    WriteLn(OutF, '# nonzero displacement into the right-hand side), and solves the resulting');
+    WriteLn(OutF, '# reduced system directly (skyline Cholesky/LDL, no iteration -- exact up');
+    WriteLn(OutF, '# to floating-point round-off, not an approximate/converged solution).');
+    WriteLn(OutF, Format('# %d material(s), %d propert(y/ies), solver tolerance %s.',
+      [Length(Model.Materials), Length(Model.Properties), D2Str(Model.SolverParams.Tolerance, FS)]));
+    WriteLn(OutF, Format('# Element types in this model: %d truss, %d beam, %d shellq4, %d shellq8%s.',
+      [nTruss, nBeam, nShellQ4, nShellQ8, otherTypeSuffix]));
+    WriteLn(OutF, '# (Verbose=1 is the default -- every line above and below starting with');
+    WriteLn(OutF, '# ''#'' is explanatory narrative, not data; set Verbose=0 in this model''s');
+    WriteLn(OutF, '# [SOLVERPARAMS] section for plain key=value output only.)');
+    WriteLn(OutF, '#');
+  end;
+
   // ---- 5. One pass per freedom case: build its dof map, assemble+factorize K ONCE, ----
   //         then solve every load case against it as a separate RHS (cheap: forward/
   //         back substitution only, no re-factorization), then evaluate any
@@ -176,6 +359,9 @@ begin
 
     if NEQ = 0 then
       Fail(ExitInvalidModel, Format('Freedom case "%s": every degree of freedom is constrained -- nothing to solve', [FC.Id]));
+
+    if Model.SolverParams.Verbose then
+      PrintConstraintsBlock(FC);
 
     SetLength(ElementEqLists, Length(Model.Elements));
     SetLength(ElementGDofs, Length(Model.Elements));
@@ -236,7 +422,7 @@ begin
     end;
 
     try
-      K.Factorize;
+      K.Factorize(Model.SolverParams.PivotTolerance);
     except
       on E: Exception do
         Fail(ExitSolverError, Format('Freedom case "%s": %s', [FC.Id, E.Message]));
@@ -248,6 +434,9 @@ begin
     // ---- 6. Solve every load case against this freedom case's factorized K ----
     for lcIdx := 0 to High(Model.LoadCases) do
     begin
+      if Model.SolverParams.Verbose then
+        PrintLoadsBlock(Model.LoadCases[lcIdx]);
+
       SetLength(RHSPerCase, NEQ + 1);
       for i := 1 to NEQ do RHSPerCase[i] := RHS[i]; // start from the prescribed-displacement contribution
 
@@ -328,6 +517,14 @@ begin
       else
         KeyPrefix := Model.LoadCases[lcIdx].Id + '.';
       EmitCaseResults(KeyPrefix, CaseFullU[lcIdx], CaseReact[lcIdx]);
+
+      if Model.SolverParams.Verbose then
+      begin
+        PrintResultsTable(Format('freedom case "%s", load case "%s"', [FC.Id, Model.LoadCases[lcIdx].Id]),
+          CaseFullU[lcIdx], CaseReact[lcIdx]);
+        PrintEquilibriumCheck(Format('freedom case "%s", load case "%s"', [FC.Id, Model.LoadCases[lcIdx].Id]),
+          CaseFullU[lcIdx], CaseReact[lcIdx], AppliedAtDof);
+      end;
     end;
 
     // ---- 7. Combinations targeting this freedom case: pure superposition, no new solve ----
@@ -356,6 +553,13 @@ begin
       else
         KeyPrefix := Comb.Id + '.';
       EmitCaseResults(KeyPrefix, ComboU, ComboR);
+
+      if Model.SolverParams.Verbose then
+      begin
+        WriteLn(OutF, Format('# Combination "%s" = %s (pure superposition of already-solved load cases -- no new solve, and no separate equilibrium check: a linear combination of individually-balanced cases is automatically balanced too).',
+          [Comb.Id, CombinationTermsDescription(Comb)]));
+        PrintResultsTable(Format('freedom case "%s", combination "%s"', [FC.Id, Comb.Id]), ComboU, ComboR);
+      end;
     end;
 
     K.Free;

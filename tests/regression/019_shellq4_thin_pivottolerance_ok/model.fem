@@ -1,0 +1,46 @@
+# FreePascal FEM Suite - native model format
+[HEADER]
+Solver=linstatic
+Units=SI (N, m, Pa)
+
+[NODES]
+1, 0, 0, 0
+2, 2, 0, 0
+3, 2, 1, 0
+4, 0, 1, 0
+
+[MATERIALS]
+1, 200000000000, 0.3, -
+
+[PROPERTIES]
+# id, type, material, thickness -- 2e-05 m
+1, shellq4, 1, 2e-05
+
+[ELEMENTS]
+1, shellq4, 1, 2, 3, 4, 1
+
+[FREEDOMCASE default]
+# edge 1-4 fully clamped; membrane dofs at nodes 2,3 left FREE so the
+# reduced system's largest diagonal is the (huge) membrane stiffness --
+# the situation that makes the default pivot check fire on a very thin
+# shell. Prescribing them, as 016 does, would hide the effect.
+1, x, 0
+1, y, 0
+1, z, 0
+1, rx, 0
+1, ry, 0
+1, rz, 0
+4, x, 0
+4, y, 0
+4, z, 0
+4, rx, 0
+4, ry, 0
+4, rz, 0
+
+[LOADCASE default]
+2, z, 1
+
+[SOLVERPARAMS]
+Tolerance=1E-9
+PivotTolerance=1E-13
+Verbose=0

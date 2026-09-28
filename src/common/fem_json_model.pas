@@ -92,10 +92,16 @@ begin
     Result.SolverName := JObj.Get('solver', '');
     Result.Units := JObj.Get('units', '');
     Result.SolverParams.Tolerance := 1e-9;
+    Result.SolverParams.PivotTolerance := 1e-10;
+    Result.SolverParams.Verbose := True;
 
     JSolverParams := GetObj(JObj, 'solverParams');
     if Assigned(JSolverParams) then
+    begin
       Result.SolverParams.Tolerance := JSolverParams.Get('tolerance', 1e-9);
+      Result.SolverParams.PivotTolerance := JSolverParams.Get('pivotTolerance', 1e-10);
+      Result.SolverParams.Verbose := JSolverParams.Get('verbose', True);
+    end;
 
     // nodes
     JArr := GetArr(JObj, 'nodes');

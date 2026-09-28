@@ -14,7 +14,7 @@ const
   // for a general non-parallelogram quad the Jacobian is only
   // bilinear and 2x2 is the conventional, not exact, choice -- same
   // tradeoff every mainstream FEA package makes for this element).
-  GaussPt: Double = 0.5773502691896257; // 1/sqrt(3)
+  GaussPt = 0.5773502691896257; // 1/sqrt(3)
   NGaussPlate = 4;
 
   // 3x3 Gauss-Legendre quadrature on [-1,1]x[-1,1]: exact (for a
@@ -27,9 +27,9 @@ const
   // selective reduced integration (full for bending, 2x2 for shear --
   // see fem_elements' Q8 bending/shear stiffness for why the two
   // terms need different rules).
-  GaussPt3: Double = 0.7745966692414834; // sqrt(3/5)
-  GaussW3Outer: Double = 0.5555555555555556; // 5/9
-  GaussW3Center: Double = 0.8888888888888888; // 8/9
+  GaussPt3 = 0.7745966692414834; // sqrt(3/5)
+  GaussW3Outer = 0.5555555555555556; // 5/9
+  GaussW3Center = 0.8888888888888888; // 8/9
   NGaussPlateQ8 = 9;
 
 type

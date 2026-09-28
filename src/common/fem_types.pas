@@ -52,8 +52,26 @@ type
 
   TSolverParams = record
     Tolerance: Double;
+    PivotTolerance: Double; // linstatic's skyline factorization: a pivot smaller than
+                            // PivotTolerance * (largest original diagonal) is reported as a
+                            // singular system. Default 1E-10. Lower it (never below ~1E-13,
+                            // where real mechanisms start slipping through -- their pivots
+                            // come out around 1E-16 relative) only for a legitimately
+                            // extreme-aspect model, e.g. a shell thinner than ~0.03 mm in SI
+                            // metres, where the rotational-vs-translational stiffness ratio
+                            // itself falls below the default. Only linstatic uses it.
     HasResultsFile: Boolean;
     ResultsFile: string; // if set, solver writes results here instead of stdout
+    Verbose: Boolean;    // default True -- tutorial-style narrative output
+                         // (model/case summaries, readable result tables,
+                         // an equilibrium self-check) alongside the plain
+                         // key=value lines every solver has always emitted.
+                         // Set Verbose=0 for the old terse-only output.
+                         // All narrative lines are '#'-prefixed, so a
+                         // Verbose=1 model's output is still safe for
+                         // fem_regress or any other key=value scraper to
+                         // parse without change -- ParseKV already skips
+                         // '#' lines and anything that isn't key=number.
   end;
 
   TNodeArray       = array of TNode;

@@ -1,0 +1,10 @@
+program step2femgeo;
+{$mode objfpc}{$H+}
+uses SysUtils, Classes, StrUtils, fem_geometry_types, fem_geometry_io;
+function ArgList(const S:string):string;var A,B:Integer;begin A:=Pos('(',S);B:=LastDelimiter(')',S);if (A>0) and (B>A) then Result:=Copy(S,A+1,B-A-1) else Result:='';end;
+function Csv(const S:string):TStringList;var I,L:Integer;Q:Boolean;Buf:string;begin Result:=TStringList.Create;Result.Delimiter:=',';Result.StrictDelimiter:=True;Q:=False;Buf:='';for I:=1 to Length(S) do begin if S[I]='''' then Q:=not Q else if (S[I]=',') and not Q then begin Result.Add(Trim(Buf));Buf:='';Continue;end;Buf:=Buf+S[I];end;Result.Add(Trim(Buf));for L:=0 to Result.Count-1 do Result[L]:=StringReplace(Result[L],'''','',[rfReplaceAll]);end;
+var FN,Err,L,Body:string; F:TStringList; I,N:Integer; M:TFEMGeometryModel; A:TStringList; X,Y,Z:Double;
+begin
+ if ParamCount<1 then begin WriteLn(StdErr,'usage: step2femgeo input.step [output.fgeo]');Halt(2);end;
+ FN:=ParamStr(1);M:=TFEMGeometryModel.Create;try M.SourceFormat:='STEP';M.SourceName:=ExtractFileName(FN);F:=TStringList.Create;try F.LoadFromFile(FN);for I:=0 to F.Count-1 do begin L:=Trim(F[I]);if (Pos('CARTESIAN_POINT',UpperCase(L))>0) and (Pos('=',L)>0) then begin Body:=ArgList(L);A:=Csv(Body);try if (A.Count>=2) then begin Body:=A[A.Count-1];if (Body[1]='(') then begin Body:=Copy(Body,2,Length(Body)-2);A.Free;A:=Csv(Body);end;if A.Count>=3 then begin X:=StrToFloat(A[0]);Y:=StrToFloat(A[1]);Z:=StrToFloat(A[2]);N:=Length(M.Vertices);SetLength(M.Vertices,N+1);M.Vertices[N].Id:=N+1;M.Vertices[N].P:=V3(X,Y,Z);end;end;except on E:Exception do WriteLn(StdErr,'WARNING GEO009 STEP CARTESIAN_POINT: ',E.Message);end;A.Free;end;end;finally F.Free;end;WriteLn(StdErr,'INFO STEP CARTESIAN_POINT entities mapped: ',Length(M.Vertices));WriteLn(StdErr,'WARNING GEO009 STEP topology/surfaces are not yet mapped by this foundation adaptor; unsupported entities are not silently converted.');if ParamCount>1 then begin if not SaveFGeoFile(ParamStr(2),M,Err) then begin WriteLn(StdErr,'ERROR ',Err);Halt(2);end;end else WriteFGeo(M,Output);finally M.Free;end;
+end.

@@ -1,0 +1,31 @@
+# FreePascal FEM Suite - native model format
+[HEADER]
+Solver=linstatic
+Units=SI (N, m, Pa)
+
+[MATERIALS]
+1, 200000000000, 0.3, -
+
+[NODES]
+# id, x, y, z -- a plain 2x1 rectangle; the bug is only in the element's node order
+1, 0, 0, 0
+2, 2, 0, 0
+3, 2, 1, 0
+4, 0, 1, 0
+
+[PROPERTIES]
+1, shellq4, 1, 0.05
+[ELEMENTS]
+# id, type, node1..node4, property -- 1, 2, 4, 3 is a bow-tie
+1, shellq4, 1, 2, 4, 3, 1
+
+[FREEDOMCASE default]
+1, x, 0
+1, y, 0
+1, z, 0
+1, rx, 0
+1, ry, 0
+1, rz, 0
+
+[LOADCASE default]
+2, z, 1

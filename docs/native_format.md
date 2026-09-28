@@ -28,12 +28,13 @@ Units=SI (N, m, Pa, rad)
 
 [PROPERTIES]
 # id, type, material, area[, Iy, Iz, J]    (Iy/Iz/J only for beam)
-# id, type, material, thickness             (shellq4)
+# id, type, material, thickness             (shellq4, shellq8)
 1, truss, 1, 0.001
 
 [ELEMENTS]
 # id, type, node1, node2, property[, refX, refY, refZ]    (refVec optional, beam only)
-# id, type, node1, node2, node3, node4, property           (shellq4, 4 nodes CCW, flat)
+# id, type, node1, node2, node3, node4, property           (shellq4: 4 corners around the perimeter, either direction; flat, convex)
+# id, type, node1..node8, property                         (shellq8: 4 corners, then midsides 5=1-2, 6=2-3, 7=3-4, 8=4-1 at exact edge midpoints)
 1, truss, 1, 2, 1
 
 [FREEDOMCASE default]
@@ -76,10 +77,10 @@ ResultsFile=results.txt
   present-vs-zero distinction the JSON format's field presence gave you.
 - **Variable field count by type**: `PROPERTIES` and `ELEMENTS` rows have
   more fields for a `beam` than a `truss` (section properties, an
-  optional orientation vector), and a `shellq4` row has its own shape
-  again (`thickness` instead of `area`/`Iy`/`Iz`/`J`; 4 node ids instead
-  of 2, no orientation vector — a flat shell's orientation comes from
-  its node order, not a separate refVec) — the parser reads the `type`
+  optional orientation vector), and a `shellq4`/`shellq8` row has its own
+  shape again (`thickness` instead of `area`/`Iy`/`Iz`/`J`; 4 or 8 node
+  ids instead of 2, no orientation vector — a flat shell's orientation
+  comes from its node order, not a separate refVec) — the parser reads the `type`
   field to know how many to expect, same as the loader has always
   worked.
 - **`key=value` lines**: `HEADER`, `SOLVERPARAMS`, and a `COMBINATION`
@@ -117,6 +118,30 @@ writer, used by `adapt_json`) share the exact same `LoadModelFromStream`
 / `LoadModelFromFile` / `LoadModelFromStdin` function signatures as the
 JSON loader did — a solver switches between formats by changing one
 line in its `uses` clause, nothing else.
+
+## Solver parameters
+
+`[SOLVERPARAMS]` is a plain `key=value` section; every key is optional.
+
+| Key | Default | Meaning |
+|---|---|---|
+| `Tolerance` | `1e-9` | Convergence tolerance for `linsparse`'s PCG iteration; also scales the equilibrium self-check in verbose output. `linstatic` factorizes directly and `modal` uses a Jacobi eigensolver; neither reads this. |
+| `PivotTolerance` | `1e-10` | `linstatic` only. A pivot smaller than `PivotTolerance` × (largest original diagonal) is reported as a singular system. Must be strictly between 0 and 1. Lower it only for a legitimately extreme model — e.g. a shell thinner than about 0.03 mm in SI metres, where the rotational-vs-translational stiffness ratio itself falls below the default. Don't go much below `1e-13`: a genuine mechanism produces pivots around `1e-16` relative, and lowering the threshold too far lets one through as a "solved" system. |
+| `Verbose` | `1` | `1`/`true`/`yes` or `0`/`false`/`no`. See "Verbose output" below. |
+| `ResultsFile` | *(stdout)* | See "Results file" below. |
+
+## Verbose output
+
+By default every solver prints explanatory narrative alongside its
+results: what the solver is doing and why, a summary of the model, the
+constraints and loads it actually applied, a human-readable results
+table, and a self-check that the answer is physically consistent
+(`linstatic`/`linsparse`: global force equilibrium; `modal`: mode
+mass-orthonormality; `linsparse` also reports PCG iterations and
+tolerance). Every narrative line starts with `#`, so the plain
+`key=value` result lines are unchanged and still trivial to scrape
+(`grep -v '^#'`; `fem_regress` already does this). Set `Verbose=0` to
+get only the terse machine-readable output.
 
 ## Results file
 

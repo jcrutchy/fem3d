@@ -140,7 +140,9 @@ begin
   SetLength(Result.LoadCases, 0);
   SetLength(Result.Combinations, 0);
   Result.SolverParams.Tolerance := 1e-9;
+  Result.SolverParams.PivotTolerance := 1e-10;
   Result.SolverParams.HasResultsFile := False;
+  Result.SolverParams.Verbose := True;
 
   secName := '';
   fcIdx := -1; lcIdx := -1; combIdx := -1;
@@ -373,10 +375,30 @@ begin
               raise Exception.CreateFmt('line %d, [SOLVERPARAMS]: Tolerance must be a number, got "%s"',
                 [i + 1, valStr]);
           end
+          else if key = 'PIVOTTOLERANCE' then
+          begin
+            if not TryStrToFloat(valStr, Result.SolverParams.PivotTolerance, GFS) then
+              raise Exception.CreateFmt('line %d, [SOLVERPARAMS]: PivotTolerance must be a number, got "%s"',
+                [i + 1, valStr]);
+            if (Result.SolverParams.PivotTolerance <= 0) or (Result.SolverParams.PivotTolerance >= 1) then
+              raise Exception.CreateFmt('line %d, [SOLVERPARAMS]: PivotTolerance must be between 0 and 1 (exclusive), got "%s"',
+                [i + 1, valStr]);
+          end
           else if key = 'RESULTSFILE' then
           begin
             Result.SolverParams.HasResultsFile := True;
             Result.SolverParams.ResultsFile := valStr;
+          end
+          else if key = 'VERBOSE' then
+          begin
+            valStr := LowerCase(valStr);
+            if (valStr = '0') or (valStr = 'false') or (valStr = 'no') then
+              Result.SolverParams.Verbose := False
+            else if (valStr = '1') or (valStr = 'true') or (valStr = 'yes') then
+              Result.SolverParams.Verbose := True
+            else
+              raise Exception.CreateFmt('line %d, [SOLVERPARAMS]: Verbose must be 0/1 or false/true, got "%s"',
+                [i + 1, valStr]);
           end;
         end;
       end;

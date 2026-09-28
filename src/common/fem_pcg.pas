@@ -615,6 +615,55 @@ begin
   end;
 end;
 
+// ---- Spin-wait helper -------------------------------------------------
+// Waits until Flag is 1, then consumes it (sets it back to 0). A pure
+// busy-spin for the first SpinsBeforeYield iterations -- the fast path
+// this pool exists for (the signaling side usually answers within
+// microseconds, so we skip the kernel round-trip an RTLEvent costs) --
+// then yields the time slice on every further iteration. Without the
+// yield, a tight "while ... do ;" starves the very thread it is waiting
+// on whenever there are fewer free cores than threads (a container, a
+// VM, a busy CI runner, hyperthreads sharing a core): the waiter burns
+// 100% of a core that the working thread needs. Found in an external
+// review of the codebase, and confirmed by reading the loop -- see
+// docs/linsparse.md.
+const
+  SpinsBeforeYield = 2000;
+
+procedure CpuRelax;
+begin
+  // x86 PAUSE hint: tells the core this is a spin-wait, saving power and
+  // (on hyperthreaded cores) handing execution resources to the sibling
+  // thread. A no-op on other architectures.
+  {$IFDEF CPUX86_64}
+  asm
+    pause
+  end;
+  {$ENDIF}
+  {$IFDEF CPUI386}
+  asm
+    pause
+  end;
+  {$ENDIF}
+end;
+
+procedure SpinUntilSet(var Flag: LongInt);
+var
+  spins: Integer;
+begin
+  spins := 0;
+  while InterlockedCompareExchange(Flag, 0, 1) <> 1 do
+  begin
+    if spins < SpinsBeforeYield then
+    begin
+      Inc(spins);
+      CpuRelax;
+    end
+    else
+      ThreadSwitch; // yield to the OS scheduler; keep yielding until the flag is set
+  end;
+end;
+
 constructor TSpinWorker.Create(const AED: TElementDataArray; AStart, AEnd, ANEQ: Integer);
 begin
   inherited Create(True);
@@ -630,7 +679,7 @@ procedure TSpinWorker.Execute;
 begin
   while True do
   begin
-    while InterlockedCompareExchange(FGoFlag.Value, 0, 1) <> 1 do ; // spin until Go=1, consume it
+    SpinUntilSet(FGoFlag.Value); // wait until Go=1, consume it
     if FStop then Break;
     MatVecRange(FED, FStart, FEnd, FX, FY, FNEQ);
     InterlockedExchange(FDoneFlag.Value, 1);
@@ -646,7 +695,7 @@ end;
 
 procedure TSpinWorker.WaitForDone;
 begin
-  while InterlockedCompareExchange(FDoneFlag.Value, 0, 1) <> 1 do ; // spin until Done=1, consume it
+  SpinUntilSet(FDoneFlag.Value); // wait until Done=1, consume it
 end;
 
 procedure TSpinWorker.StopAndJoin;

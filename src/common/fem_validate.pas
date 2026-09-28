@@ -71,6 +71,72 @@ var
       Errs.Add(Label_ + ' is infinite');
   end;
 
+  // Corner-orientation check for a quad shell (shellq4, or the 4 corner
+  // nodes of a shellq8). Walking the corners 1-2-3-4, every corner must
+  // turn the same way as corner 1 does -- and corner 1's turning
+  // direction defines the element normal by construction (it is built
+  // from nodes 1, 2, 4), so "the same way" needs no separate reference.
+  // For each corner, s = sin(interior angle) = (edgeIn x edgeOut) . n /
+  // (|edgeIn| |edgeOut|):
+  //   s < 0  -> the corner turns the OTHER way: a concave (reentrant)
+  //             corner, or a self-intersecting "bow-tie" (e.g. nodes
+  //             listed 1-2-4-3 instead of around the perimeter);
+  //   s ~ 0  -> three consecutive corners are collinear: degenerate.
+  // Both drive the isoparametric Jacobian determinant to <= 0 at that
+  // corner. The element routines do check detJ, but only at their Gauss
+  // points (which don't include the corners) and only at assembly time,
+  // where the failure surfaces as a solver error (exit 4) rather than
+  // as the model-validation error (exit 3) it really is.
+  //
+  // Node WINDING (clockwise vs counter-clockwise) is deliberately NOT
+  // checked: the element's local frame is built from its own node
+  // ordering, so reversing the order just flips the local normal and
+  // gives the same answer to machine precision (verified against
+  // tests/regression/018_shellq4_clockwise_ok).
+  procedure CheckQuadCornerOrientation(const el: TElement;
+    const c1, c2, c3, c4: TNode; nxU, nyU, nzU: Double);
+  var
+    px, py, pz: array[0..3] of Double;
+    k, kPrev, kNext: Integer;
+    ax, ay, az, bx, by, bz, aLen, bLen, cx, cy, cz, sinAngle: Double;
+  begin
+    px[0] := c1.X; py[0] := c1.Y; pz[0] := c1.Z;
+    px[1] := c2.X; py[1] := c2.Y; pz[1] := c2.Z;
+    px[2] := c3.X; py[2] := c3.Y; pz[2] := c3.Z;
+    px[3] := c4.X; py[3] := c4.Y; pz[3] := c4.Z;
+    for k := 0 to 3 do
+    begin
+      kPrev := (k + 3) mod 4;
+      kNext := (k + 1) mod 4;
+      ax := px[k] - px[kPrev]; ay := py[k] - py[kPrev]; az := pz[k] - pz[kPrev];
+      bx := px[kNext] - px[k]; by := py[kNext] - py[k]; bz := pz[kNext] - pz[k];
+      aLen := Sqrt(ax*ax + ay*ay + az*az);
+      bLen := Sqrt(bx*bx + by*by + bz*bz);
+      if (aLen <= 0) or (bLen <= 0) then
+      begin
+        Errs.Add(Format('Element %d: %s has coincident corner nodes (zero-length edge at node %d)',
+          [el.Id, el.ElementType, el.NodeIds[k]]));
+        Exit;
+      end;
+      cx := ay*bz - az*by;
+      cy := az*bx - ax*bz;
+      cz := ax*by - ay*bx;
+      sinAngle := (cx*nxU + cy*nyU + cz*nzU) / (aLen * bLen);
+      if sinAngle < -1.0E-6 then
+      begin
+        Errs.Add(Format('Element %d: %s is not a valid convex quadrilateral -- corner node %d turns the opposite way to the rest of the element (a concave/reentrant corner, or nodes listed in a self-intersecting "bow-tie" order such as 1-2-4-3; list the four corners in order around the element''s perimeter)',
+          [el.Id, el.ElementType, el.NodeIds[k]]));
+        Exit;
+      end
+      else if sinAngle <= 1.0E-6 then
+      begin
+        Errs.Add(Format('Element %d: %s has a degenerate corner at node %d -- it and its two neighbouring corner nodes are (nearly) collinear',
+          [el.Id, el.ElementType, el.NodeIds[k]]));
+        Exit;
+      end;
+    end;
+  end;
+
   // Shellq8-only: the Q8 formulation's isoparametric geometry mapping
   // (and, in turn, the exact-reproduction properties the element's
   // patch tests rely on) assumes each midside node sits at the exact
@@ -260,7 +326,9 @@ begin
           outOfPlane := Abs((d3x*nx + d3y*ny + d3z*nz) / nLen);
           if outOfPlane > 0.01 * charLen then
             Errs.Add(Format('Element %d: shellq4 is not flat -- node %d is %.4g%% of the element''s characteristic edge length out of the plane through nodes %d, %d, %d',
-              [el.Id, el.NodeIds[2], 100.0*outOfPlane/charLen, el.NodeIds[0], el.NodeIds[1], el.NodeIds[3]]));
+              [el.Id, el.NodeIds[2], 100.0*outOfPlane/charLen, el.NodeIds[0], el.NodeIds[1], el.NodeIds[3]]))
+          else
+            CheckQuadCornerOrientation(el, n1, n2, n3, n4, nx/nLen, ny/nLen, nz/nLen);
         end;
       end;
     end;
@@ -310,6 +378,7 @@ begin
               [el.Id, el.NodeIds[2], 100.0*outOfPlane/charLen, el.NodeIds[0], el.NodeIds[1], el.NodeIds[3]]))
           else
           begin
+            CheckQuadCornerOrientation(el, n1, n2, n3, n4, nx/nLen, ny/nLen, nz/nLen);
             CheckQ8MidsideNode(el.Id, el.NodeIds[4], n1, n2, n5, charLen);
             CheckQ8MidsideNode(el.Id, el.NodeIds[5], n2, n3, n6, charLen);
             CheckQ8MidsideNode(el.Id, el.NodeIds[6], n3, n4, n7, charLen);

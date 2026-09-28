@@ -35,13 +35,22 @@ example in the actual file syntax.
   - `"beam"`: `material` (whose `nu` must be set), `area` (> 0), `Iy`,
     `Iz` (second moments of area about the local y/z axes, > 0), `J`
     (torsion constant, > 0).
-  - `"shellq4"`: `material` (whose `nu` must be set), `thickness` (> 0).
+  - `"shellq4"`, `"shellq8"`: `material` (whose `nu` must be set),
+    `thickness` (> 0).
 - **elements** — `id`, `type`, `nodes` (ordered list, length depends on
   type), `property`. `"truss"` and `"beam"` take exactly 2 node ids;
-  `"shellq4"` takes exactly 4, ordered counterclockwise around the
-  element as seen from its positive-normal side, and must be flat (all
-  4 nodes coplanar, within 1% of the element's characteristic edge
-  length -- checked by the validator, not left to degrade silently).
+  `"shellq4"` takes exactly 4, listed in order around the element's
+  perimeter (clockwise or counterclockwise -- the element's local frame
+  follows the ordering you give, so reversing it gives the same answer
+  to machine precision), and must be flat (all 4 nodes coplanar, within
+  1% of the element's characteristic edge length) and a valid convex
+  quadrilateral (no concave corner, no three consecutive corners
+  collinear, and not a self-intersecting "bow-tie" order such as
+  1-2-4-3) -- all checked by the validator, not left to degrade
+  silently. `"shellq8"` takes exactly 8: the same 4 corners in the same
+  order, then 4 midside nodes -- node 5 midway along the 1-2 edge,
+  6 along 2-3, 7 along 3-4, 8 along 4-1 -- each at the exact midpoint of
+  its edge (within 1% of the characteristic edge length).
   - `"truss"` models a 2-node, 3D pin-jointed axial bar (no bending
     stiffness).
   - `"beam"` models a 2-node 3D Euler-Bernoulli frame element (axial +
@@ -68,6 +77,19 @@ example in the actual file syntax.
     formulation. Not yet supported by `modal` (no mass matrix
     implemented for it -- rejected by name rather than silently
     mishandled, see `docs/modal.md`).
+  - `"shellq8"` models an 8-node quadratic (second-order) flat-shell
+    element: the same membrane + bending split as `"shellq4"`, but
+    quadratic instead of bilinear, and with Mindlin-Reissner
+    (shear-deformable) bending instead of DKQ thin-plate bending -- so it
+    represents transverse shear deformation and covers thick plates as
+    well as thin ones. Bending uses selective reduced integration (full
+    3x3 Gauss on the bending terms, reduced 2x2 on the shear terms) to
+    avoid shear locking; transverse shear uses a correction factor of
+    5/6. Same 6 dof/node (`x,y,z,rx,ry,rz`) and same artificial drilling
+    penalty as `"shellq4"`, so the two connect consistently. The element
+    is flat, with straight edges and exact-midpoint midside nodes: it
+    does not model curved shell geometry. Also not yet supported by
+    `modal`.
 - **constraints** — `node`, `dof` (`"x"`,`"y"`,`"z"`,`"rx"`,`"ry"`,`"rz"`),
   `value` (prescribed displacement/rotation; `0.0` = fixed). Non-zero
   values are supported — `linstatic` folds them into the load vector
@@ -86,11 +108,11 @@ matrix. It checks, among other things:
   constraint/load → node)
 - unsupported element types, wrong node count for an element's type
 - **an element's type matches its property's type** (e.g. a `beam`
-  element pointing at a `shellq4` property is rejected outright, rather
+  element pointing at a `shellq4`/`shellq8` property is rejected outright, rather
   than silently reading that property's never-validated, likely-zero
   `Area`/`Iy`/`Iz`/`J`)
 - non-positive `E`, `area`, `Iy`, `Iz`, `J`, `thickness`; `nu` out of the
-  physically valid range; a beam or shellq4 material missing `nu`
+  physically valid range; a beam, shellq4, or shellq8 material missing `nu`
 - **every coordinate, material/section property, and freedom-case/
   load-case value is finite** (not NaN, not ±Infinity) -- this is
   separate from the parser's own strictness (below) because a value
@@ -98,10 +120,22 @@ matrix. It checks, among other things:
   an explicit finite-value check catches it
 - a beam's `refVec` (or the default heuristic, if none given) being
   (near-)parallel to its own axis -- degenerate, can't fix its roll
-- a shellq4's 4 nodes are coplanar (within 1% of its characteristic edge
-  length) -- the DKQ/membrane formulation assumes a flat element
+- a shellq4's 4 nodes (or a shellq8's 4 corner nodes) are coplanar
+  (within 1% of its characteristic edge length) -- both formulations
+  assume a flat element
+- a shellq4/shellq8's corners form a valid convex quadrilateral: each
+  corner must turn the same way as corner 1, so a concave (reentrant)
+  corner, a self-intersecting "bow-tie" order, or three collinear
+  consecutive corners is rejected here as a model error (exit 3) rather
+  than surfacing later as an assembly failure. Clockwise vs
+  counterclockwise ordering is deliberately NOT checked -- it makes no
+  difference to the result.
+- a shellq8's 4 midside nodes each sit at the exact 3D midpoint of the
+  edge they belong to (within 1% of the characteristic edge length) --
+  the element's exactness properties depend on straight edges with
+  centred midside nodes
 - a constraint/load referencing a rotational dof at a node with no
-  rotational dof (i.e. not connected to any beam or shellq4)
+  rotational dof (i.e. not connected to any beam, shellq4, or shellq8)
 - **no duplicate `(node, dof)` constraint within one freedom case** --
   two constraints on the same dof (even identical ones) is rejected
   rather than letting the later one silently win
@@ -109,7 +143,11 @@ matrix. It checks, among other things:
   before assembly, as a fast, specific error rather than a generic
   singular-matrix failure from the solver)
 - `SolverParams.Tolerance` is finite, positive, and within a plausible
-  range (roughly 1e-15 to 1.0 -- outside that is almost certainly a typo)
+  range (roughly 1e-15 to 1.0 -- outside that is almost certainly a typo);
+  `SolverParams.PivotTolerance` (linstatic only) must lie strictly
+  between 0 and 1 -- that one is enforced by the native parser at load
+  time (exit 2), since a value outside that range is meaningless rather
+  than merely suspicious
 
 Separately, the **native `.fem` parser itself** (`fem_native_model.pas`)
 is strict about syntax: a numeric field that isn't empty/`-` but fails
@@ -243,10 +281,14 @@ there's more than one freedom case, bare `MODE.<n>...` otherwise.
 
 ## Planned extensions
 
-- Plate/shell elements: 1st-order (flat, linear) `shellq4` is built and
-  wired (membrane + DKQ bending, 6 dof/node, artificial drilling-dof
-  penalty -- see the `"shellq4"` property/element entries above).
-  2nd-order (curved-edge) variant not started.
+- Plate/shell elements: 1st-order (flat, bilinear) `shellq4` and
+  2nd-order (flat, quadratic, shear-deformable) `shellq8` are both built
+  and wired (6 dof/node, artificial drilling-dof penalty -- see the
+  property/element entries above). Not yet done: curved (non-flat)
+  shell geometry, a proper (non-penalty) drilling formulation, a shell
+  mass matrix for `modal`, and a quadratic-geometry discrete-Kirchhoff
+  variant of the 8-node element (thin-plate only, no shear dof) kept in
+  reserve as an alternative to the Mindlin formulation.
 - Adaptors for other ASCII input formats (Strand7 `.txt`, etc.) — see
   `docs/adaptors.md`. `adapt_json` (JSON -> native) exists; a
   Strand7-format adaptor is low priority for now, not started.

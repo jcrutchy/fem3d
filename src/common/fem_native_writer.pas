@@ -144,12 +144,17 @@ begin
       SL.Add('');
     end;
 
-    if (Model.SolverParams.Tolerance <> 1e-9) or Model.SolverParams.HasResultsFile then
+    if (Model.SolverParams.Tolerance <> 1e-9) or Model.SolverParams.HasResultsFile
+       or (Model.SolverParams.PivotTolerance <> 1e-10) or not Model.SolverParams.Verbose then
     begin
       SL.Add('[SOLVERPARAMS]');
       SL.Add('Tolerance=' + D2S(Model.SolverParams.Tolerance));
+      if Model.SolverParams.PivotTolerance <> 1e-10 then
+        SL.Add('PivotTolerance=' + D2S(Model.SolverParams.PivotTolerance));
       if Model.SolverParams.HasResultsFile then
         SL.Add('ResultsFile=' + Model.SolverParams.ResultsFile);
+      if not Model.SolverParams.Verbose then
+        SL.Add('Verbose=0');
     end;
 
     SL.LineBreak := #10;

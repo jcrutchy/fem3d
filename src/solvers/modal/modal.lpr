@@ -27,6 +27,11 @@ var
 
   MassLumped: TDoubleArray; // [1..NDOF], lumped translational mass per global dof (0 for rotational -- see below)
 
+function D2Str(V: Double; const Fmt: TFormatSettings): string;
+begin
+  Result := FloatToStr(V, Fmt);
+end;
+
 procedure Fail(Code: Integer; const Msg: string);
 begin
   WriteLn(StdErr, Msg);
@@ -93,6 +98,65 @@ var
   UseBareKeys: Boolean;
   KeyPrefix: string;
   OutF: Text;
+  nTruss, nBeam, nOtherType: Integer;
+  otherTypeSuffix: string;
+
+procedure PrintConstraintsBlock(const FC: TFreedomCase; const DMap: TDofMap);
+var
+  ii, jj, ggi, nConstrained: Integer;
+begin
+  nConstrained := DMap.NDOF - DMap.NEQ;
+  WriteLn(OutF, Format('# Freedom case "%s": %d node(s), %d degree(s) of freedom total, '
+    + '%d fixed, %d free -- modal analysis solves for as many modes as there are free dof.',
+    [FC.Id, Length(Model.Nodes), DMap.NDOF, nConstrained, DMap.NEQ]));
+  if nConstrained = 0 then Exit;
+  WriteLn(OutF, '#   Fixed dof (every constraint here is exactly zero -- modal only supports fixed, not prescribed-nonzero, checked above):');
+  for ii := 0 to High(Model.Nodes) do
+    for jj := 0 to DMap.NodeDofCounts[ii] - 1 do
+    begin
+      ggi := fem_dofmap.GlobalDof(DMap, ii, jj);
+      if DMap.GlobalToEq[ggi] = 0 then
+        WriteLn(OutF, Format('#     node %d, %s', [Model.Nodes[ii].Id, DofNames[jj]]));
+    end;
+end;
+
+// Mass-orthonormality self-check: EigVecs' columns (from the
+// mass-normalized, symmetric-reduced eigenproblem Kmass=D^-1*Kff*D^-1)
+// should already be exactly orthonormal in the plain Euclidean sense --
+// that's what a correct symmetric eigensolver guarantees, and it's also
+// EXACTLY the physical mode-orthogonality condition phi_i^T*M*phi_j =
+// delta_ij once mapped back through phi=D^-1*y (D^-1*M*D^-1=I by
+// construction, so y_i^T*y_j = phi_i^T*M*phi_j identically). A nonzero
+// off-diagonal or a diagonal far from 1 here means a genuine eigensolver
+// bug, not a modeling issue -- the direct modal analog of linstatic's
+// force-equilibrium check.
+procedure PrintOrthonormalityCheck(const CaseLabel: string; const EigVecs: TDenseMatrix; NEQ: Integer);
+var
+  ii, jj, kk: Integer;
+  dot, maxOffDiag, maxDiagErr: Double;
+begin
+  maxOffDiag := 0; maxDiagErr := 0;
+  for ii := 1 to NEQ do
+    for jj := ii to NEQ do
+    begin
+      dot := 0;
+      for kk := 1 to NEQ do
+        dot := dot + EigVecs[kk][ii] * EigVecs[kk][jj];
+      if ii = jj then
+      begin
+        if Abs(dot - 1.0) > maxDiagErr then maxDiagErr := Abs(dot - 1.0);
+      end
+      else
+        if Abs(dot) > maxOffDiag then maxOffDiag := Abs(dot);
+    end;
+  WriteLn(OutF, Format('# Mode mass-orthonormality check for %s (should be near-exact regardless of model):', [CaseLabel]));
+  if (maxOffDiag <= 1.0E-6) and (maxDiagErr <= 1.0E-6) then
+    WriteLn(OutF, Format('#   max |phi_i^T M phi_j|, i<>j = %s; max |phi_i^T M phi_i - 1| = %s -- OK',
+      [D2Str(maxOffDiag, FS), D2Str(maxDiagErr, FS)]))
+  else
+    WriteLn(OutF, Format('#   max |phi_i^T M phi_j|, i<>j = %s; max |phi_i^T M phi_i - 1| = %s -- WARNING: not orthonormal, likely an eigensolver bug',
+      [D2Str(maxOffDiag, FS), D2Str(maxDiagErr, FS)]));
+end;
 begin
   FS := DefaultFormatSettings;
   FS.DecimalSeparator := '.';
@@ -174,6 +238,38 @@ begin
   else
     OutF := Output;
 
+  WriteLn(OutF, '# FreePascal FEM Suite - modal (lumped-mass Jacobi eigensolver)');
+  WriteLn(OutF, Format('# model=%s', [ModelFile]));
+  WriteLn(OutF, Format('# nodes=%d elements=%d freedom_cases=%d',
+    [Length(Model.Nodes), Length(Model.Elements), Length(Model.FreedomCases)]));
+
+  if Model.SolverParams.Verbose then
+  begin
+    nTruss := 0; nBeam := 0; nOtherType := 0;
+    for i := 0 to High(Model.Elements) do
+      if Model.Elements[i].ElementType = 'truss' then Inc(nTruss)
+      else if Model.Elements[i].ElementType = 'beam' then Inc(nBeam)
+      else Inc(nOtherType);
+    if nOtherType > 0 then
+      otherTypeSuffix := Format(', %d of a type modal does not support', [nOtherType])
+    else
+      otherTypeSuffix := '';
+    WriteLn(OutF, '#');
+    WriteLn(OutF, '# modal extracts natural frequencies and mode shapes: builds a lumped');
+    WriteLn(OutF, '# (diagonal, translational-only) mass matrix alongside the usual');
+    WriteLn(OutF, '# stiffness matrix, reduces the generalized eigenproblem K*phi=omega^2*M*phi');
+    WriteLn(OutF, '# to a standard symmetric one, and solves it with a Jacobi eigensolver --');
+    WriteLn(OutF, '# exact for the discretized (lumped-mass) model, not an approximation of');
+    WriteLn(OutF, '# the solve itself. Rotary inertia isn''t modeled (see docs/modal.md), so');
+    WriteLn(OutF, '# every free rotational dof needs a beam element with mass on it, or an');
+    WriteLn(OutF, '# error is raised rather than silently returning a wrong answer.');
+    WriteLn(OutF, Format('# %d material(s), %d propert(y/ies). Element types: %d truss, %d beam%s.',
+      [Length(Model.Materials), Length(Model.Properties), nTruss, nBeam, otherTypeSuffix]));
+    WriteLn(OutF, '# (Verbose=1 is the default; set Verbose=0 in [SOLVERPARAMS] for plain');
+    WriteLn(OutF, '# key=value output only.)');
+    WriteLn(OutF, '#');
+  end;
+
   // ---- 5-9. One pass per freedom case: dof map, mass+stiffness, eigensolve, output ----
   // Modal analysis has no load cases (the eigenproblem is homogeneous), so
   // unlike linstatic this only loops over freedom cases, not load cases too.
@@ -185,6 +281,9 @@ begin
     DofMap := BuildDofMap(Model, NodeIdx, FC.Constraints);
     if DofMap.NEQ = 0 then
       Fail(ExitInvalidModel, Format('Freedom case "%s": every degree of freedom is constrained -- nothing to solve', [FC.Id]));
+
+    if Model.SolverParams.Verbose then
+      PrintConstraintsBlock(FC, DofMap);
 
     SetLength(ElementEqLists, Length(Model.Elements));
     SetLength(ElementGDofs, Length(Model.Elements));
@@ -280,6 +379,9 @@ begin
         Fail(ExitSolverError, Format('Freedom case "%s": %s', [FC.Id, E.Message]));
     end;
 
+    if Model.SolverParams.Verbose then
+      PrintOrthonormalityCheck(Format('freedom case "%s"', [FC.Id]), EigVecs, DofMap.NEQ);
+
     // ---- Output ----
     // omega^2 = eigenvalue of the mass-normalized problem; mode shape in
     // physical (displacement) coordinates is D^-1 * eigenvector, then
@@ -287,13 +389,6 @@ begin
     // convention) -- D^-1*eigenvector is already exactly mass-normalized
     // since the reduction was symmetric (Kmass eigenvectors are orthonormal
     // in the Euclidean sense, and phi = D^-1 y => phi^T M phi = y^T y = 1).
-    if fcIdx = 0 then
-    begin
-      WriteLn(OutF, '# FreePascal FEM Suite - modal (lumped-mass Jacobi eigensolver)');
-      WriteLn(OutF, Format('# model=%s', [ModelFile]));
-      WriteLn(OutF, Format('# nodes=%d elements=%d freedom_cases=%d',
-        [Length(Model.Nodes), Length(Model.Elements), Length(Model.FreedomCases)]));
-    end;
     nModes := DofMap.NEQ;
     for i := 1 to nModes do
     begin
@@ -303,6 +398,16 @@ begin
           'positive semi-definite; check the model for an unstable/mechanism sub-structure', [FC.Id, i, EigVals[i]]));
       omega := Sqrt(EigVals[i]);
       freq := omega / (2 * Pi);
+      if Model.SolverParams.Verbose then
+      begin
+        if freq > 0 then
+          WriteLn(OutF, Format('# Mode %d: omega=%s rad/s, freq=%s Hz, period=%s s',
+            [i, D2Str(omega, FS), D2Str(freq, FS), D2Str(1.0 / freq, FS)]))
+        else
+          WriteLn(OutF, Format('# Mode %d: omega=%s rad/s, freq=%s Hz -- a rigid-body mode (no period; '
+            + 'likely an unrestrained/mechanism direction in this freedom case)',
+            [i, D2Str(omega, FS), D2Str(freq, FS)]));
+      end;
       WriteLn(OutF, Format('%sMODE.%d.omega=%.17e', [KeyPrefix, i, omega], FS));
       WriteLn(OutF, Format('%sMODE.%d.freq=%.17e', [KeyPrefix, i, freq], FS));
       for j := 0 to High(Model.Nodes) do

@@ -230,8 +230,24 @@ FEM_THREADS=8 ./bin/linsparse some_large_model.fem   # see docs/linsparse.md bef
       format, `fem_validate`, `fem_dofmap`, `linstatic`/`linsparse`; not
       yet supported by `modal` -- no shell mass matrix, rejected by
       name). Drilling dof (`rz`) uses a documented artificial penalty,
-      not a from-first-principles formulation. 2nd-order (curved-edge)
-      not started.
+      not a from-first-principles formulation.
+- [x] 2nd-order plate/shell element `shellq8` — 8-node quadratic
+      Mindlin-Reissner (shear-deformable) flat shell with selective
+      reduced integration; membrane, bending/shear, combined-shell, and
+      global-3D layers each patch-tested independently (44 checks across
+      four standalone programs), wired through the same pipeline as
+      `shellq4`, and covered end-to-end by a regression case whose
+      expected reactions were derived independently. A thin-plate-only
+      discrete-Kirchhoff 8-node variant is kept in reserve as an
+      alternative formulation.
+- [x] Tutorial-style verbose solver output (default on; `Verbose=0` for
+      terse) with physical self-checks, in all three solvers.
+- [x] Hardening pass from an external code review, each claim verified
+      against the code first (about half held up): spin-wait yields
+      instead of starving, corner-orientation validation for shell
+      quads (concave / bow-tie / degenerate corners rejected as model
+      errors), `PivotTolerance` solver parameter, typed constants
+      untyped, duplicate test file removed.
 - [ ] Adaptors for other ASCII formats (Strand7 `.txt` first candidate;
       see `docs/adaptors.md` — low priority for now, not started)
 - [ ] Rotary inertia for beam elements, so `modal` can handle a beam's

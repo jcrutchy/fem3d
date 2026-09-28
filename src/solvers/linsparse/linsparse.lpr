@@ -65,6 +65,8 @@ var
   UseBareKeys: Boolean;
   KeyPrefix: string;
   OutF: Text;
+  nTruss, nBeam, nShellQ4, nShellQ8, nOtherType: Integer;
+  otherTypeSuffix: string;
 
 function FindLoadCaseIndex(const Id: string): Integer;
 var
@@ -94,6 +96,149 @@ begin
       if DofMap.GlobalToEq[ggi] = 0 then
         WriteLn(OutF, Format('%sREACT.%d.%s=%.17e', [CasePrefix, Model.Nodes[ii].Id, DofNames[jj], R[ggi]], FS));
     end;
+end;
+
+// ---- Verbose-mode narrative helpers, mirroring linstatic's -----------
+// (see linstatic.lpr's own copies for the fuller reasoning in comments;
+// kept as a second copy rather than a shared unit since each solver
+// here is a fully standalone program -- same duplication tradeoff the
+// project already accepts for e.g. EmitCaseResults above.) The one
+// linsparse-specific addition is PrintPcgConvergence, since this is
+// the one solver where "did it actually converge, and how" is a live
+// question a direct/exact solver like linstatic never has.
+
+function D2Str(V: Double; const Fmt: TFormatSettings): string;
+begin
+  Result := FloatToStr(V, Fmt);
+end;
+
+procedure PrintConstraintsBlock(const FC: TFreedomCase);
+var
+  ii, jj, ggi, nConstrained: Integer;
+begin
+  nConstrained := NDOF - NEQ;
+  WriteLn(OutF, Format('# Freedom case "%s": %d node(s), %d degree(s) of freedom total, '
+    + '%d constrained, %d free -- the free ones are what this solve is for.',
+    [FC.Id, NumNodes, NDOF, nConstrained, NEQ]));
+  if nConstrained = 0 then Exit;
+  WriteLn(OutF, '#   Constrained dof (node.dof = prescribed value; 0 = fully restrained):');
+  for ii := 0 to High(Model.Nodes) do
+    for jj := 0 to NodeDofCounts[ii] - 1 do
+    begin
+      ggi := GlobalDof(ii, jj);
+      if DofMap.GlobalToEq[ggi] = 0 then
+        WriteLn(OutF, Format('#     node %d, %s = %s',
+          [Model.Nodes[ii].Id, DofNames[jj], D2Str(DofMap.Prescribed[ggi], FS)]));
+    end;
+end;
+
+procedure PrintLoadsBlock(const LC: TLoadCase);
+var
+  ii: Integer;
+begin
+  if Length(LC.Loads) = 0 then
+  begin
+    WriteLn(OutF, Format('# Load case "%s": no applied loads (results below come entirely from '
+      + 'the freedom case''s prescribed displacements, if any).', [LC.Id]));
+    Exit;
+  end;
+  WriteLn(OutF, Format('# Load case "%s": %d applied load(s):', [LC.Id, Length(LC.Loads)]));
+  for ii := 0 to High(LC.Loads) do
+    WriteLn(OutF, Format('#   node %d, %s = %s',
+      [LC.Loads[ii].NodeId, LC.Loads[ii].Dof, D2Str(LC.Loads[ii].Value, FS)]));
+end;
+
+// PCG-specific: unlike linstatic's exact direct factorization, this
+// solve is iterative and only exact up to Tolerance -- worth surfacing
+// in the main narrative, not just behind the FEM_DEBUG env var (which
+// stays as-is for anyone who wants it on stderr regardless of Verbose).
+procedure PrintPcgConvergence(const CaseLabel: string; iters: Integer; shift, tol: Double);
+begin
+  if shift > 0 then
+    WriteLn(OutF, Format('# PCG for %s: converged in %d iteration(s) to tolerance %s (IC(0) preconditioner '
+      + 'needed a diagonal shift of %s to avoid breakdown -- see docs/linsparse.md).',
+      [CaseLabel, iters, D2Str(tol, FS), D2Str(shift, FS)]))
+  else
+    WriteLn(OutF, Format('# PCG for %s: converged in %d iteration(s) to tolerance %s.',
+      [CaseLabel, iters, D2Str(tol, FS)]));
+end;
+
+procedure PrintResultsTable(const CaseLabel: string; const U, R: TDoubleArray);
+var
+  ii, jj, ggi: Integer;
+  line: string;
+begin
+  WriteLn(OutF, Format('# Results for %s (displacement / rotation, then reaction where restrained):', [CaseLabel]));
+  for ii := 0 to High(Model.Nodes) do
+  begin
+    if NodeDofCounts[ii] = 0 then Continue;
+    line := Format('#   node %d: ', [Model.Nodes[ii].Id]);
+    for jj := 0 to NodeDofCounts[ii] - 1 do
+    begin
+      ggi := GlobalDof(ii, jj);
+      line := line + Format('%s=%s', [DofNames[jj], D2Str(U[ggi], FS)]);
+      if DofMap.GlobalToEq[ggi] = 0 then
+        line := line + Format(' (react %s)', [D2Str(R[ggi], FS)]);
+      if jj < NodeDofCounts[ii] - 1 then line := line + ', ';
+    end;
+    WriteLn(OutF, line);
+  end;
+end;
+
+// Same global force-equilibrium self-check as linstatic -- see that
+// file's copy for the full reasoning. Doubly worth having here: a bug
+// in the matrix-free PCG element-by-element machinery (as opposed to
+// linstatic's conventional assembled-matrix path) is a genuinely
+// different code path that could go wrong in its own way, and this
+// catches it the same way regardless of which solver produced U/R.
+procedure PrintEquilibriumCheck(const CaseLabel: string; const U, R, Applied: TDoubleArray);
+var
+  ii, jj, ggi: Integer;
+  totals: array[0..2] of Double;
+  maxMag: Double;
+  tol: Double;
+  allOk: Boolean;
+begin
+  totals[0] := 0; totals[1] := 0; totals[2] := 0;
+  maxMag := 0;
+  for ii := 0 to High(Model.Nodes) do
+    for jj := 0 to 2 do
+    begin
+      if jj >= NodeDofCounts[ii] then Continue;
+      ggi := GlobalDof(ii, jj);
+      if DofMap.GlobalToEq[ggi] = 0 then
+        totals[jj] := totals[jj] + R[ggi]
+      else
+        totals[jj] := totals[jj] + Applied[ggi];
+      if Abs(R[ggi]) > maxMag then maxMag := Abs(R[ggi]);
+      if Abs(Applied[ggi]) > maxMag then maxMag := Abs(Applied[ggi]);
+    end;
+  // PCG only solves to Tolerance, not to floating-point round-off the
+  // way the direct solver does, so this check's own tolerance is
+  // scaled a little looser (10x) to avoid flagging PCG's own expected
+  // convergence-level residual as a false "WARNING".
+  tol := 10.0 * Model.SolverParams.Tolerance * (maxMag + 1.0);
+  allOk := (Abs(totals[0]) <= tol) and (Abs(totals[1]) <= tol) and (Abs(totals[2]) <= tol);
+  WriteLn(OutF, Format('# Equilibrium check for %s (sum of all external forces should be ~0):', [CaseLabel]));
+  if allOk then
+    WriteLn(OutF, Format('#   sum Fx=%s, sum Fy=%s, sum Fz=%s -- OK',
+      [D2Str(totals[0], FS), D2Str(totals[1], FS), D2Str(totals[2], FS)]))
+  else
+    WriteLn(OutF, Format('#   sum Fx=%s, sum Fy=%s, sum Fz=%s -- WARNING: out of balance beyond tolerance -- '
+      + 'possibly PCG not fully converged (see the iteration count above) rather than a solver bug',
+      [D2Str(totals[0], FS), D2Str(totals[1], FS), D2Str(totals[2], FS)]));
+end;
+
+function CombinationTermsDescription(const Comb: TCombination): string;
+var
+  ti: Integer;
+begin
+  Result := '';
+  for ti := 0 to High(Comb.Terms) do
+  begin
+    if ti > 0 then Result := Result + ' + ';
+    Result := Result + Format('%s*%s', [D2Str(Comb.Terms[ti].Factor, FS), Comb.Terms[ti].LoadCaseId]);
+  end;
 end;
 
 begin
@@ -169,6 +314,39 @@ begin
     [NumNodes, Length(Model.Elements), Length(Model.FreedomCases), Length(Model.LoadCases), Length(Model.Combinations),
      NumThreads, SyncModeStr, ElementCountThreadThreshold]));
 
+  if Model.SolverParams.Verbose then
+  begin
+    nTruss := 0; nBeam := 0; nShellQ4 := 0; nShellQ8 := 0; nOtherType := 0;
+    for ei := 0 to High(Model.Elements) do
+      if Model.Elements[ei].ElementType = 'truss' then Inc(nTruss)
+      else if Model.Elements[ei].ElementType = 'beam' then Inc(nBeam)
+      else if Model.Elements[ei].ElementType = 'shellq4' then Inc(nShellQ4)
+      else if Model.Elements[ei].ElementType = 'shellq8' then Inc(nShellQ8)
+      else Inc(nOtherType);
+    if nOtherType > 0 then
+      otherTypeSuffix := Format(', %d of an unrecognized type', [nOtherType])
+    else
+      otherTypeSuffix := '';
+
+    WriteLn(OutF, '#');
+    WriteLn(OutF, '# linsparse solves the same Ku=F as linstatic, but never assembles or');
+    WriteLn(OutF, '# stores a global stiffness matrix: each PCG iteration recomputes Kff*x');
+    WriteLn(OutF, '# directly from every element''s own local stiffness (element-by-element,');
+    WriteLn(OutF, '# optionally multithreaded), preconditioned with an incomplete Cholesky');
+    WriteLn(OutF, '# factor. This trades linstatic''s exact-to-round-off direct solve for one');
+    WriteLn(OutF, '# that only needs to be exact to this model''s solver Tolerance, in exchange');
+    WriteLn(OutF, '# for never needing the O(NDOF^2)-ish memory a dense/skyline factorization');
+    WriteLn(OutF, '# would -- worth it once a model is too big for linstatic, not before.');
+    WriteLn(OutF, Format('# %d material(s), %d propert(y/ies), solver tolerance %s.',
+      [Length(Model.Materials), Length(Model.Properties), D2Str(Model.SolverParams.Tolerance, FS)]));
+    WriteLn(OutF, Format('# Element types in this model: %d truss, %d beam, %d shellq4, %d shellq8%s.',
+      [nTruss, nBeam, nShellQ4, nShellQ8, otherTypeSuffix]));
+    WriteLn(OutF, '# (Verbose=1 is the default -- every line above and below starting with');
+    WriteLn(OutF, '# ''#'' is explanatory narrative, not data; set Verbose=0 in this model''s');
+    WriteLn(OutF, '# [SOLVERPARAMS] section for plain key=value output only.)');
+    WriteLn(OutF, '#');
+  end;
+
   // ---- 5. One pass per freedom case: build its dof map and precompute every ----
   //         element's local stiffness + equation-number map ONCE (mirrors
   //         linstatic factorizing K once per freedom case) -- no global matrix
@@ -185,6 +363,9 @@ begin
 
     if NEQ = 0 then
       Fail(ExitInvalidModel, Format('Freedom case "%s": every degree of freedom is constrained -- nothing to solve', [FC.Id]));
+
+    if Model.SolverParams.Verbose then
+      PrintConstraintsBlock(FC);
 
     try
       ElementData := PrecomputeElementData(Model, NodeIdx, MatIdx, PropIdx, DofMap);
@@ -227,6 +408,9 @@ begin
     //         precomputed element data above is reused across all of them)
     for lcIdx := 0 to High(Model.LoadCases) do
     begin
+      if Model.SolverParams.Verbose then
+        PrintLoadsBlock(Model.LoadCases[lcIdx]);
+
       SetLength(RHSPerCase, NEQ + 1);
       for i := 1 to NEQ do RHSPerCase[i] := RHS[i];
 
@@ -252,6 +436,10 @@ begin
         if pcgShift > 0 then
           WriteLn(StdErr, Format('  (IC(0) needed a diagonal shift of %.3e to avoid breakdown)', [pcgShift]));
       end;
+
+      if Model.SolverParams.Verbose then
+        PrintPcgConvergence(Format('freedom case "%s", load case "%s"', [FC.Id, Model.LoadCases[lcIdx].Id]),
+          pcgIters, pcgShift, Model.SolverParams.Tolerance);
 
       SetLength(FullU, NDOF + 1);
       for i := 1 to NDOF do
@@ -301,6 +489,14 @@ begin
       else
         KeyPrefix := Model.LoadCases[lcIdx].Id + '.';
       EmitCaseResults(KeyPrefix, CaseFullU[lcIdx], CaseReact[lcIdx]);
+
+      if Model.SolverParams.Verbose then
+      begin
+        PrintResultsTable(Format('freedom case "%s", load case "%s"', [FC.Id, Model.LoadCases[lcIdx].Id]),
+          CaseFullU[lcIdx], CaseReact[lcIdx]);
+        PrintEquilibriumCheck(Format('freedom case "%s", load case "%s"', [FC.Id, Model.LoadCases[lcIdx].Id]),
+          CaseFullU[lcIdx], CaseReact[lcIdx], AppliedAtDof);
+      end;
     end;
 
     // ---- 7. Combinations: pure superposition, no new solve ----
@@ -329,6 +525,13 @@ begin
       else
         KeyPrefix := Comb.Id + '.';
       EmitCaseResults(KeyPrefix, ComboU, ComboR);
+
+      if Model.SolverParams.Verbose then
+      begin
+        WriteLn(OutF, Format('# Combination "%s" = %s (pure superposition of already-solved load cases -- no new PCG solve, and no separate equilibrium check: a linear combination of individually-balanced cases is automatically balanced too).',
+          [Comb.Id, CombinationTermsDescription(Comb)]));
+        PrintResultsTable(Format('freedom case "%s", combination "%s"', [FC.Id, Comb.Id]), ComboU, ComboR);
+      end;
     end;
   end;
 
