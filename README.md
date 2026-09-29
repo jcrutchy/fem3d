@@ -149,21 +149,33 @@ FEM_THREADS=8 ./bin/linsparse some_large_model.fem   # see docs/linsparse.md bef
 ./bin/fem_regress tests/regression --bin bin        # run every regression case
 ```
 
+## Tutorials
+
+`docs/tutorials/` — a graduated series of worked examples (single truss
+bar → cantilever beam → portal frame, more to come), aimed at someone
+learning FEA itself, not just this package: theory, an annotated model
+file, and the solver's actual verbose output read line by line against
+a hand calculation (or, once hand calculation stops being possible, an
+independently cross-checked one). Every tutorial's model is a real
+`tests/regression/` case — start there if you're new to this project.
+
 ## Tests / examples
 
 - `tests/regression/` — `fem_regress` manifest-driven cases with
-  SHA-256-protected models and hand-verified expected values. See
-  `docs/regression_testing.md`. 23 cases: 4 truss, 2 beam, 2 moment
-  frame (an L-shaped cantilever with hand-verified reactions, and a
-  statically-indeterminate portal frame cross-checked against NumPy),
-  2 modal, 1 load-case-combination, 1 multi-freedom-case, 5 of the above
-  re-run through `linsparse` to cross-check it against `linstatic`, and
-  6 deliberately-BORKED (one of them `linsparse`-specific, proving PCG's
-  non-positive-definite check catches the same mechanism `linstatic`'s
-  zero-pivot check does). Each case directory keeps both `model.fem`
-  (what solvers actually read) and, where applicable, the original
-  `model.json` it was converted from via `adapt_json`, as a working
-  round-trip check.
+  SHA-256-protected models and hand-verified (or, where hand calculation
+  isn't possible, independently cross-checked) expected values. See
+  `docs/regression_testing.md`. 38 cases, split roughly evenly between
+  VERIFIED (truss, beam, moment frames including a statically-
+  indeterminate portal frame cross-checked against NumPy, modal,
+  shellq4/shellq8 membrane patch tests, load-case combinations,
+  multi-freedom-case models, several re-run through `linsparse` to
+  cross-check it against `linstatic`) and deliberately BORKED (bad
+  geometry, dangling references, non-positive properties, mechanisms,
+  unsupported element/solver combinations, and the like — each checked
+  for the *specific* rejection reason, not just a nonzero exit code).
+  Each case directory keeps both `model.fem` (what solvers actually
+  read) and, where applicable, the original `model.json` it was
+  converted from via `adapt_json`, as a working round-trip check.
 - `tests/*.json`, `examples/*.json` — earlier, pre-regression-harness
   JSON models from when this suite was worked out during development;
   kept for reference but not wired into anything, and not converted to
