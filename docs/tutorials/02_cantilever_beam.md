@@ -217,6 +217,71 @@ Against the hand calc:
   what "OK" here actually promises: it's real evidence, not a
   guarantee.
 
+## Reading the element forces
+
+Everything above is about the *nodes*. A structure's real question is
+usually what is happening *inside* the members — how much shear and
+bending the beam is carrying, and where. After the displacement results,
+`linstatic` also prints the internal forces it recovers from them, at
+evenly spaced stations along each beam (the `BeamDivisions` setting in
+`[SOLVERPARAMS]`, default 4 segments = 5 stations; try `BeamDivisions=10`
+for a smoother diagram):
+
+```
+#   beam 1 (nodes 1-2), length 3, 4 division(s) = 5 stations:
+#     forces on the +x face of the section, member-local (principal) axes:
+#          s           N          Vy          Vz           T          My          Mz
+#            0           0       -1000           0           0           0       -3000
+#         0.75           0       -1000           0           0           0       -2250
+#          1.5           0       -1000           0           0           0       -1500
+#         2.25           0       -1000           0           0           0        -750
+#            3           0       -1000           0           0           0           0
+```
+
+Compare with the hand calculation. For a tip load `P` the shear is the
+same everywhere (`Vy = -P = -1000`, the whole load has to pass through
+every section) and the bending moment falls linearly from the support to
+nothing at the free end: `Mz(s) = -P (L - s)`, so `-3000` at the root,
+`-1500` at mid-span, `0` at the tip — exactly the column above.
+
+Two conventions to be clear about, because they decide every sign:
+
+- **The forces are those on the section's positive face** — the face
+  looking toward node 2 — i.e. what the part of the beam beyond the
+  section does to the part before it. That is why the root moment reads
+  `-3000` while the *reaction* in the nodal results reads `+3000`: the
+  reaction is what the support does to the beam; the internal moment is
+  what the rest of the beam does to the section. Same magnitude (that is
+  moment equilibrium of the whole beam), opposite sign by definition.
+- **"Principal axes" and "global axes".** The table above is in the
+  beam's own local axes, which for this section are also its principal
+  axes (the section is given as `Iy` and `Iz` with no product of inertia).
+  The next table in the output resolves the same resultants on the global
+  X/Y/Z axes. Here the two are identical because the beam lies along
+  global X; tilt the beam (see regression case `022_beam_column_global_axes`,
+  a column along Y) and they differ.
+
+Stress needs more than forces. The stress table in this model's output
+shows zeros for the same reason the section data is incomplete: `A`, `Iy`,
+`Iz` and `J` don't say how far the top and bottom fibres are from the
+centroid. Add the optional `Cy`, `Cz` (and `Rt` for torsion) to the
+property line and the table fills in. Regression case
+`020_beam_element_forces_cantilever` is this same beam with
+`Cy = 0.1`, `Cz = 0.05`, and gives
+
+```
+#          s      sig_axial     sig_max     sig_min         tau   von Mises      Tresca
+#            0           0      3.75E6     -3.75E6           0      3.75E6      3.75E6
+#         1.5           0     1.875E6    -1.875E6           0     1.875E6     1.875E6
+#            3           0           0           0           0           0           0
+```
+
+which is the textbook `sigma = M c / I = 3000 x 0.1 / 8e-5 = 3.75e6` Pa at
+the root, tension on the top fibre and compression on the bottom, halving
+at mid-span. Von Mises and Tresca both equal `|sigma|` here because
+there is no torsion; give a beam a twist (case
+`021_beam_axial_torsion_stress`) and the two start to differ.
+
 ## Try it yourself
 
 1. **Change the load axis to `z` instead of `y`** (`2, z, -1000`). Now
@@ -231,7 +296,11 @@ Against the hand calc:
    any transverse load, with nothing to resist the rotation. `linstatic`
    should refuse to solve it; read the error it gives and see which
    piece of `docs/model_format.md`'s validation list it's coming from.
-3. **Add a second load case** — a new `[LOADCASE ...]` section with a
+3. **Add `BeamDivisions=8`** to `[SOLVERPARAMS]` and read how the moment
+   table changes (it should stay on the same straight line, just with
+   more points), then add `Cy` and `Cz` to the property line and watch
+   the stress columns appear.
+4. **Add a second load case** — a new `[LOADCASE ...]` section with a
    different value or axis, in the same model file. Both will solve
    against the same freedom case and the same factorized stiffness
    matrix (`linstatic` factorizes once per freedom case, then reuses it

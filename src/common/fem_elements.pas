@@ -5,7 +5,7 @@ unit fem_elements;
 interface
 
 uses
-  fem_types, fem_index, fem_plate_shapefuncs, Math, SysUtils;
+  fem_types, fem_index, fem_plate_shapefuncs, fem_matrix, Math, SysUtils;
 
 type
   // TElemMatrix is fem_types.TDenseMatrix under another name for
@@ -39,6 +39,17 @@ function TrussStiffness3D(E, A, x1, y1, z1, x2, y2, z2: Double): TElemMatrix;
 // parallel to the beam axis) used to fix the beam's roll about its own
 // axis -- pass a zero vector to use the default heuristic (global Z,
 // falling back to global X for near-vertical members).
+// Beam local frame (ex along the member, ey/ez the section axes) and
+// length, from the two end nodes and an optional orientation reference
+// vector (all-zero = use the default heuristic). Shared by the stiffness
+// build and by element-force recovery so both always agree on the axes.
+function BeamFrame(x1, y1, z1, x2, y2, z2: Double;
+  const RefVec: array of Double; out L: Double): TFrame3;
+
+// 12x12 local-axes beam stiffness (Euler-Bernoulli, 6 dof per node:
+// u, v, w, rx, ry, rz in the member's own frame).
+function BeamLocalStiffness(E, G, A, Iy, Iz, J, L: Double): TElemMatrix;
+
 function BeamStiffness3D(E, G, A, Iy, Iz, J,
   x1, y1, z1, x2, y2, z2: Double; const RefVec: array of Double): TElemMatrix;
 
@@ -298,41 +309,11 @@ begin
     end;
 end;
 
-// --- 3D vector helpers (only used here; not worth a whole unit for 3 ops) ---
-type TVec3 = array[0..2] of Double;
-
-function VCross(const a, b: TVec3): TVec3;
-begin
-  Result[0] := a[1] * b[2] - a[2] * b[1];
-  Result[1] := a[2] * b[0] - a[0] * b[2];
-  Result[2] := a[0] * b[1] - a[1] * b[0];
-end;
-
-function VNorm(const a: TVec3): Double;
-begin
-  Result := Sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
-end;
-
-function VNormalize(const a: TVec3): TVec3;
+function BeamFrame(x1, y1, z1, x2, y2, z2: Double;
+  const RefVec: array of Double; out L: Double): TFrame3;
 var
-  n: Double;
-begin
-  n := VNorm(a);
-  if n <= 0 then
-    raise Exception.Create('Cannot normalize a zero-length vector (degenerate beam orientation)');
-  Result[0] := a[0] / n; Result[1] := a[1] / n; Result[2] := a[2] / n;
-end;
-
-function BeamStiffness3D(E, G, A, Iy, Iz, J,
-  x1, y1, z1, x2, y2, z2: Double; const RefVec: array of Double): TElemMatrix;
-var
-  dx, dy, dz, L: Double;
+  dx, dy, dz: Double;
   ex, ey, ez, vref: TVec3;
-  Lam: array[0..2, 0..2] of Double; // rows = ex,ey,ez in global coords
-  T: TElemMatrix;  // 12x12 block-diagonal transform (4 copies of Lam)
-  Kl: TElemMatrix; // local stiffness
-  blk, r, c, i, jc, k: Integer;
-  a1, a2, a3: Double;
 begin
   dx := x2 - x1; dy := y2 - y1; dz := z2 - z1;
   L := Sqrt(dx * dx + dy * dy + dz * dz);
@@ -360,10 +341,15 @@ begin
   ey := VNormalize(VCross(vref, ex));
   ez := VCross(ex, ey); // already unit length: ex, ey orthonormal
 
-  Lam[0][0] := ex[0]; Lam[0][1] := ex[1]; Lam[0][2] := ex[2];
-  Lam[1][0] := ey[0]; Lam[1][1] := ey[1]; Lam[1][2] := ey[2];
-  Lam[2][0] := ez[0]; Lam[2][1] := ez[1]; Lam[2][2] := ez[2];
+  Result.ex := ex; Result.ey := ey; Result.ez := ez;
+end;
 
+function BeamLocalStiffness(E, G, A, Iy, Iz, J, L: Double): TElemMatrix;
+var
+  Kl: TElemMatrix;
+  i, jc: Integer;
+  a1, a2, a3: Double;
+begin
   // --- local stiffness (Euler-Bernoulli 3D frame element, standard form) ---
   Kl := NewElemMatrix(12);
   a1 := E * A / L;
@@ -390,27 +376,18 @@ begin
   for i := 1 to 12 do
     for jc := i + 1 to 12 do
       Kl[jc][i] := Kl[i][jc];
+  Result := Kl;
+end;
 
-  // --- transform: Kglobal = T^T * Kl * T, T block-diagonal with 4 copies of Lam ---
-  T := NewElemMatrix(12);
-  for blk := 0 to 3 do
-    for r := 0 to 2 do
-      for c := 0 to 2 do
-        T[blk * 3 + r + 1][blk * 3 + c + 1] := Lam[r][c];
-
-  // Result := Kl * T
-  Result := NewElemMatrix(12);
-  for i := 1 to 12 do
-    for jc := 1 to 12 do
-      for k := 1 to 12 do
-        Result[i][jc] := Result[i][jc] + Kl[i][k] * T[k][jc];
-
-  Kl := Result; // Kl now holds Kl*T (scratch reuse)
-  Result := NewElemMatrix(12);
-  for i := 1 to 12 do
-    for jc := 1 to 12 do
-      for k := 1 to 12 do
-        Result[i][jc] := Result[i][jc] + T[k][i] * Kl[k][jc]; // T^T[i][k] = T[k][i]
+function BeamStiffness3D(E, G, A, Iy, Iz, J,
+  x1, y1, z1, x2, y2, z2: Double; const RefVec: array of Double): TElemMatrix;
+var
+  L: Double;
+  F: TFrame3;
+begin
+  F := BeamFrame(x1, y1, z1, x2, y2, z2, RefVec, L);
+  // Kglobal = T^T * Kl * T, T block-diagonal with 4 copies of Lam
+  Result := TransformBlockDiag(BeamLocalStiffness(E, G, A, Iy, Iz, J, L), F, 3, 4);
 end;
 
 function QuadMembraneStiffnessLocal(E, Nu, Thickness: Double;
@@ -424,7 +401,6 @@ var
   J11, J12, J21, J22, detJ, invJ11, invJ12, invJ21, invJ22: Double;
   dNdx, dNdy: array[1..4] of Double;
   B: array[1..3, 1..8] of Double;
-  BtD: array[1..8, 1..3] of Double;
   cE: Double;
 begin
   lx[1] := x1; ly[1] := y1;
@@ -456,11 +432,9 @@ begin
       J21 := J21 + sf.dNdEta[i] * lx[i];
       J22 := J22 + sf.dNdEta[i] * ly[i];
     end;
-    detJ := J11 * J22 - J12 * J21;
+    detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
     if detJ <= 0 then
       raise Exception.Create('Quad membrane element has non-positive Jacobian determinant (inverted or degenerate shape)');
-    invJ11 :=  J22 / detJ; invJ12 := -J12 / detJ;
-    invJ21 := -J21 / detJ; invJ22 :=  J11 / detJ;
 
     for i := 1 to 4 do
     begin
@@ -479,24 +453,8 @@ begin
       B[3, 2*i]     := dNdx[i];
     end;
 
-    // BtD = B^T * D  (8x3)
-    for i := 1 to 8 do
-      for jc := 1 to 3 do
-      begin
-        BtD[i, jc] := 0;
-        for k := 1 to 3 do
-          BtD[i, jc] := BtD[i, jc] + B[k, i] * D[k, jc];
-      end;
-
-    // Result += (BtD * B) * thickness * detJ * weight
-    for i := 1 to 8 do
-      for jc := 1 to 8 do
-      begin
-        cE := 0; // reused as an accumulator, constitutive value no longer needed here
-        for k := 1 to 3 do
-          cE := cE + BtD[i, k] * B[k, jc];
-        Result[i, jc] := Result[i, jc] + cE * Thickness * detJ * gp[g].Weight;
-      end;
+    // Result += B^T * D * B * thickness * detJ * weight
+    AccumBtDB(Result, B, D, 3, 8, Thickness * detJ * gp[g].Weight);
   end;
 end;
 
@@ -512,7 +470,6 @@ var
   J11, J12, J21, J22, detJ, invJ11, invJ12, invJ21, invJ22: Double;
   dNdx, dNdy: array[1..8] of Double;
   B: array[1..3, 1..16] of Double;
-  BtD: array[1..16, 1..3] of Double;
   acc, cE: Double;
 begin
   lx[1] := x1; ly[1] := y1;
@@ -548,11 +505,9 @@ begin
       J21 := J21 + sf.dNdEta[i] * lx[i];
       J22 := J22 + sf.dNdEta[i] * ly[i];
     end;
-    detJ := J11 * J22 - J12 * J21;
+    detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
     if detJ <= 0 then
       raise Exception.Create('Q8 quad membrane element has non-positive Jacobian determinant (inverted or degenerate shape)');
-    invJ11 :=  J22 / detJ; invJ12 := -J12 / detJ;
-    invJ21 := -J21 / detJ; invJ22 :=  J11 / detJ;
 
     for i := 1 to 8 do
     begin
@@ -571,24 +526,8 @@ begin
       B[3, 2*i]     := dNdx[i];
     end;
 
-    // BtD = B^T * D  (16x3)
-    for i := 1 to 16 do
-      for jc := 1 to 3 do
-      begin
-        BtD[i, jc] := 0;
-        for k := 1 to 3 do
-          BtD[i, jc] := BtD[i, jc] + B[k, i] * D[k, jc];
-      end;
-
-    // Result += (BtD * B) * thickness * detJ * weight
-    for i := 1 to 16 do
-      for jc := 1 to 16 do
-      begin
-        acc := 0;
-        for k := 1 to 3 do
-          acc := acc + BtD[i, k] * B[k, jc];
-        Result[i, jc] := Result[i, jc] + acc * Thickness * detJ * gp[g].Weight;
-      end;
+    // Result += B^T * D * B * thickness * detJ * weight
+    AccumBtDB(Result, B, D, 3, 16, Thickness * detJ * gp[g].Weight);
   end;
 end;
 
@@ -608,9 +547,7 @@ var
   dNdx, dNdy: array[1..8] of Double;
   Bb: array[1..3, 1..24] of Double;
   Bs: array[1..2, 1..24] of Double;
-  BbtDb: array[1..24, 1..3] of Double;
-  BstDs: array[1..24, 1..2] of Double;
-  acc: Double;
+  Ds: array[1..2, 1..2] of Double; // k*G*t*I(2x2)
 begin
   lx[1] := x1; ly[1] := y1;
   lx[2] := x2; ly[2] := y2;
@@ -628,6 +565,8 @@ begin
 
   Gmod := E / (2.0 * (1.0 + Nu));
   DsDiag := ShearCorrectionFactor * Gmod * Thickness;
+  Ds[1,1] := DsDiag; Ds[1,2] := 0;
+  Ds[2,1] := 0;      Ds[2,2] := DsDiag;
 
   Result := NewElemMatrix(24);
   for i := 1 to 24 do
@@ -648,11 +587,9 @@ begin
       J21 := J21 + sf.dNdEta[i] * lx[i];
       J22 := J22 + sf.dNdEta[i] * ly[i];
     end;
-    detJ := J11 * J22 - J12 * J21;
+    detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
     if detJ <= 0 then
       raise Exception.Create('Q8 Mindlin plate element has non-positive Jacobian determinant (inverted or degenerate shape)');
-    invJ11 :=  J22 / detJ; invJ12 := -J12 / detJ;
-    invJ21 := -J21 / detJ; invJ22 :=  J11 / detJ;
 
     for i := 1 to 8 do
     begin
@@ -674,22 +611,7 @@ begin
       Bb[3, 3*i]     := -dNdy[i];
     end;
 
-    for i := 1 to 24 do
-      for jc := 1 to 3 do
-      begin
-        BbtDb[i, jc] := 0;
-        for k := 1 to 3 do
-          BbtDb[i, jc] := BbtDb[i, jc] + Bb[k, i] * Db[k, jc];
-      end;
-
-    for i := 1 to 24 do
-      for jc := 1 to 24 do
-      begin
-        acc := 0;
-        for k := 1 to 3 do
-          acc := acc + BbtDb[i, k] * Bb[k, jc];
-        Result[i, jc] := Result[i, jc] + acc * detJ * gp3[g].Weight;
-      end;
+    AccumBtDB(Result, Bb, Db, 3, 24, detJ * gp3[g].Weight);
   end;
 
   // --- shear block: REDUCED 2x2 Gauss (selective reduced integration) ---
@@ -706,11 +628,9 @@ begin
       J21 := J21 + sf.dNdEta[i] * lx[i];
       J22 := J22 + sf.dNdEta[i] * ly[i];
     end;
-    detJ := J11 * J22 - J12 * J21;
+    detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
     if detJ <= 0 then
       raise Exception.Create('Q8 Mindlin plate element has non-positive Jacobian determinant (inverted or degenerate shape)');
-    invJ11 :=  J22 / detJ; invJ12 := -J12 / detJ;
-    invJ21 := -J21 / detJ; invJ22 :=  J11 / detJ;
 
     for i := 1 to 8 do
     begin
@@ -731,19 +651,8 @@ begin
       Bs[2, 3*i - 1] := -sf.N[i];
     end;
 
-    // BstDs = Bs^T * Ds, Ds = DsDiag * I(2x2), so this is just DsDiag * Bs^T
-    for i := 1 to 24 do
-      for jc := 1 to 2 do
-        BstDs[i, jc] := DsDiag * Bs[jc, i];
-
-    for i := 1 to 24 do
-      for jc := 1 to 24 do
-      begin
-        acc := 0;
-        for k := 1 to 2 do
-          acc := acc + BstDs[i, k] * Bs[k, jc];
-        Result[i, jc] := Result[i, jc] + acc * detJ * gp2[g].Weight;
-      end;
+    // Ds = DsDiag * I(2x2)
+    AccumBtDB(Result, Bs, Ds, 2, 24, detJ * gp2[g].Weight);
   end;
 end;
 
@@ -810,161 +719,64 @@ function QuadShellStiffnessQ8_3D(E, Nu, Thickness, ShearCorrectionFactor, DrillF
   x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4,
   x5, y5, z5, x6, y6, z6, x7, y7, z7, x8, y8, z8: Double): TElemMatrix;
 var
-  ex, ey, ez, edge1, edge2, nrm, rel: TVec3;
-  gx, gy, gz: array[1..8] of Double; // global node coords, for the projection loop
+  F: TFrame3;
+  p: array[1..8] of TVec3;
   lx, ly: array[1..8] of Double;
-  KeLocal: TElemMatrix; // 48x48
-  T: array[1..48, 1..48] of Double;
-  KeT: array[1..48, 1..48] of Double;
-  i, jc, k, blk: Integer;
+  i: Integer;
 begin
-  // Same local-basis construction as QuadShellStiffness3D (see its
-  // comments) -- from the CORNER nodes only (1, 2, 4); midside nodes
-  // 5-8 are projected into that same plane just below, not used to
-  // define it.
-  edge1[0] := x2 - x1; edge1[1] := y2 - y1; edge1[2] := z2 - z1;
-  edge2[0] := x4 - x1; edge2[1] := y4 - y1; edge2[2] := z4 - z1;
-  if VNorm(edge1) <= 0 then
-    raise Exception.Create('Q8 quad shell element has a zero-length 1-2 edge (coincident nodes)');
-  ex := VNormalize(edge1);
-  nrm := VCross(edge1, edge2);
-  if VNorm(nrm) <= 0 then
-    raise Exception.Create('Q8 quad shell element is degenerate (corner nodes 1, 2, 4 are collinear)');
-  ez := VNormalize(nrm);
-  ey := VCross(ez, ex);
+  p[1] := Vec3(x1, y1, z1); p[2] := Vec3(x2, y2, z2);
+  p[3] := Vec3(x3, y3, z3); p[4] := Vec3(x4, y4, z4);
+  p[5] := Vec3(x5, y5, z5); p[6] := Vec3(x6, y6, z6);
+  p[7] := Vec3(x7, y7, z7); p[8] := Vec3(x8, y8, z8);
 
-  gx[1]:=x1; gy[1]:=y1; gz[1]:=z1;
-  gx[2]:=x2; gy[2]:=y2; gz[2]:=z2;
-  gx[3]:=x3; gy[3]:=y3; gz[3]:=z3;
-  gx[4]:=x4; gy[4]:=y4; gz[4]:=z4;
-  gx[5]:=x5; gy[5]:=y5; gz[5]:=z5;
-  gx[6]:=x6; gy[6]:=y6; gz[6]:=z6;
-  gx[7]:=x7; gy[7]:=y7; gz[7]:=z7;
-  gx[8]:=x8; gy[8]:=y8; gz[8]:=z8;
+  // Same local-basis construction as QuadShellStiffness3D -- from the
+  // CORNER nodes only (1, 2, 4); midside nodes 5-8 are projected into that
+  // same plane, not used to define it.
+  F := QuadFrame(p[1], p[2], p[4],
+    'Q8 quad shell element has a zero-length 1-2 edge (coincident nodes)',
+    'Q8 quad shell element is degenerate (corner nodes 1, 2, 4 are collinear)');
 
   lx[1] := 0; ly[1] := 0;
   for i := 2 to 8 do
-  begin
-    rel[0] := gx[i] - x1; rel[1] := gy[i] - y1; rel[2] := gz[i] - z1;
-    lx[i] := rel[0]*ex[0] + rel[1]*ex[1] + rel[2]*ex[2];
-    ly[i] := rel[0]*ey[0] + rel[1]*ey[1] + rel[2]*ey[2];
-  end;
+    ProjectToFrame(F, p[1], p[i], lx[i], ly[i]);
 
-  KeLocal := QuadShellStiffnessQ8Local(E, Nu, Thickness, ShearCorrectionFactor, DrillFactor,
-    lx[1], ly[1], lx[2], ly[2], lx[3], ly[3], lx[4], ly[4],
-    lx[5], ly[5], lx[6], ly[6], lx[7], ly[7], lx[8], ly[8]);
-
-  // T: global (x,y,z,rx,ry,rz)*8 -> local (u,v,w,rx,ry,rz)*8, same
-  // block-diagonal-per-node [[Lam,0],[0,Lam]] pattern as
-  // QuadShellStiffness3D, just repeated for 8 nodes instead of 4.
-  for i := 1 to 48 do
-    for jc := 1 to 48 do
-      T[i, jc] := 0;
-  for blk := 0 to 7 do
-  begin
-    T[6*blk+1, 6*blk+1] := ex[0]; T[6*blk+1, 6*blk+2] := ex[1]; T[6*blk+1, 6*blk+3] := ex[2];
-    T[6*blk+2, 6*blk+1] := ey[0]; T[6*blk+2, 6*blk+2] := ey[1]; T[6*blk+2, 6*blk+3] := ey[2];
-    T[6*blk+3, 6*blk+1] := ez[0]; T[6*blk+3, 6*blk+2] := ez[1]; T[6*blk+3, 6*blk+3] := ez[2];
-    T[6*blk+4, 6*blk+4] := ex[0]; T[6*blk+4, 6*blk+5] := ex[1]; T[6*blk+4, 6*blk+6] := ex[2];
-    T[6*blk+5, 6*blk+4] := ey[0]; T[6*blk+5, 6*blk+5] := ey[1]; T[6*blk+5, 6*blk+6] := ey[2];
-    T[6*blk+6, 6*blk+4] := ez[0]; T[6*blk+6, 6*blk+5] := ez[1]; T[6*blk+6, 6*blk+6] := ez[2];
-  end;
-
-  // KeT = KeLocal * T
-  for i := 1 to 48 do
-    for jc := 1 to 48 do
-    begin
-      KeT[i, jc] := 0;
-      for k := 1 to 48 do
-        KeT[i, jc] := KeT[i, jc] + KeLocal[i, k] * T[k, jc];
-    end;
-
-  // Result = T^T * KeT
-  Result := NewElemMatrix(48);
-  for i := 1 to 48 do
-    for jc := 1 to 48 do
-    begin
-      Result[i, jc] := 0;
-      for k := 1 to 48 do
-        Result[i, jc] := Result[i, jc] + T[k, i] * KeT[k, jc];
-    end;
+  // Same per-node [[Lam,0],[0,Lam]] pattern as QuadShellStiffness3D,
+  // repeated for 8 nodes: 16 blocks.
+  Result := TransformBlockDiag(
+    QuadShellStiffnessQ8Local(E, Nu, Thickness, ShearCorrectionFactor, DrillFactor,
+      lx[1], ly[1], lx[2], ly[2], lx[3], ly[3], lx[4], ly[4],
+      lx[5], ly[5], lx[6], ly[6], lx[7], ly[7], lx[8], ly[8]),
+    F, 3, 16);
 end;
 
 function QuadMembraneStiffness3D(E, Nu, Thickness: Double;
   x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4: Double): TElemMatrix;
 var
-  ex, ey, ez, edge1, edge2, nrm: TVec3;
+  F: TFrame3;
+  p: array[1..4] of TVec3;
   lx, ly: array[1..4] of Double; // node local in-plane coords
-  T: array[1..8, 1..12] of Double; // local (u,v)*4 <- global (x,y,z)*4
-  KeLocal: array[1..8, 1..8] of Double;
-  KeLocalM: TElemMatrix;
-  KeT: array[1..8, 1..12] of Double; // scratch: KeLocal * T
-  i, jc, k, blk: Integer;
-  rel: TVec3;
+  i: Integer;
 begin
-  // --- local in-plane basis: ex along edge 1->2, ez the element normal
-  // from edge1 x edge2 (edge1 = 1->2, edge2 = 1->4 -- using the two
-  // edges off node 1, not a diagonal, so a non-planar or badly-wound
-  // quad still produces *some* normal rather than a near-zero cross
-  // product from near-parallel diagonals), ey completing a right-handed
-  // orthonormal set. Same construction style as BeamStiffness3D's Lam.
-  edge1[0] := x2 - x1; edge1[1] := y2 - y1; edge1[2] := z2 - z1;
-  edge2[0] := x4 - x1; edge2[1] := y4 - y1; edge2[2] := z4 - z1;
-  if VNorm(edge1) <= 0 then
-    raise Exception.Create('Quad membrane element has a zero-length 1-2 edge (coincident nodes)');
-  ex := VNormalize(edge1);
-  nrm := VCross(edge1, edge2);
-  if VNorm(nrm) <= 0 then
-    raise Exception.Create('Quad membrane element is degenerate (nodes 1, 2, 4 are collinear)');
-  ez := VNormalize(nrm);
-  ey := VCross(ez, ex); // unit length: ez, ex already orthonormal by construction
+  p[1] := Vec3(x1, y1, z1); p[2] := Vec3(x2, y2, z2);
+  p[3] := Vec3(x3, y3, z3); p[4] := Vec3(x4, y4, z4);
 
-  // --- project all 4 nodes into the local (x,y) plane ---
-  lx[1] := 0; ly[1] := 0; // node 1 is the local origin by construction
-  rel[0] := x2 - x1; rel[1] := y2 - y1; rel[2] := z2 - z1;
-  lx[2] := rel[0]*ex[0]+rel[1]*ex[1]+rel[2]*ex[2];
-  ly[2] := rel[0]*ey[0]+rel[1]*ey[1]+rel[2]*ey[2];
-  rel[0] := x3 - x1; rel[1] := y3 - y1; rel[2] := z3 - z1;
-  lx[3] := rel[0]*ex[0]+rel[1]*ex[1]+rel[2]*ex[2];
-  ly[3] := rel[0]*ey[0]+rel[1]*ey[1]+rel[2]*ey[2];
-  rel[0] := x4 - x1; rel[1] := y4 - y1; rel[2] := z4 - z1;
-  lx[4] := rel[0]*ex[0]+rel[1]*ex[1]+rel[2]*ex[2];
-  ly[4] := rel[0]*ey[0]+rel[1]*ey[1]+rel[2]*ey[2];
+  // Local in-plane basis: ex along edge 1->2, ez the element normal (from
+  // the two edges off node 1), ey completing a right-handed set.
+  F := QuadFrame(p[1], p[2], p[4],
+    'Quad membrane element has a zero-length 1-2 edge (coincident nodes)',
+    'Quad membrane element is degenerate (nodes 1, 2, 4 are collinear)');
 
-  KeLocalM := QuadMembraneStiffnessLocal(E, Nu, Thickness,
-    lx[1], ly[1], lx[2], ly[2], lx[3], ly[3], lx[4], ly[4]);
-  for i := 1 to 8 do
-    for jc := 1 to 8 do
-      KeLocal[i, jc] := KeLocalM[i, jc];
+  // Project all 4 nodes into the local (x,y) plane; node 1 is the origin.
+  lx[1] := 0; ly[1] := 0;
+  for i := 2 to 4 do
+    ProjectToFrame(F, p[1], p[i], lx[i], ly[i]);
 
-  // --- transform: T maps global (x,y,z)*4 -> local (u,v)*4 ---
-  for i := 1 to 8 do
-    for jc := 1 to 12 do
-      T[i, jc] := 0;
-  for blk := 0 to 3 do
-  begin
-    T[2*blk + 1, 3*blk + 1] := ex[0]; T[2*blk + 1, 3*blk + 2] := ex[1]; T[2*blk + 1, 3*blk + 3] := ex[2];
-    T[2*blk + 2, 3*blk + 1] := ey[0]; T[2*blk + 2, 3*blk + 2] := ey[1]; T[2*blk + 2, 3*blk + 3] := ey[2];
-  end;
-
-  // KeT = KeLocal * T  (8x12)
-  for i := 1 to 8 do
-    for jc := 1 to 12 do
-    begin
-      KeT[i, jc] := 0;
-      for k := 1 to 8 do
-        KeT[i, jc] := KeT[i, jc] + KeLocal[i, k] * T[k, jc];
-    end;
-
-  // Result = T^T * KeT  (12x12)
-  Result := NewElemMatrix(12);
-  for i := 1 to 12 do
-    for jc := 1 to 12 do
-    begin
-      Result[i, jc] := 0;
-      for k := 1 to 8 do
-        Result[i, jc] := Result[i, jc] + T[k, i] * KeT[k, jc]; // T^T[i,k] = T[k,i]
-    end;
+  // T maps global (x,y,z)*4 -> local (u,v)*4: 4 blocks of the 2x3 in-plane
+  // rows of Lam.
+  Result := TransformBlockDiag(
+    QuadMembraneStiffnessLocal(E, Nu, Thickness,
+      lx[1], ly[1], lx[2], ly[2], lx[3], ly[3], lx[4], ly[4]),
+    F, 2, 4);
 end;
 
 function QuadBendingStiffnessLocal(E, Nu, Thickness: Double;
@@ -989,7 +801,6 @@ var
   B: array[1..3, 1..12] of Double;
   Dfac: Double;
   D: array[1..3, 1..3] of Double;
-  BtD: array[1..12, 1..3] of Double;
   acc: Double;
   jc, k: Integer;
 begin
@@ -1067,11 +878,9 @@ begin
       J21 := J21 + sf4.dNdEta[i] * px[i];
       J22 := J22 + sf4.dNdEta[i] * py[i];
     end;
-    detJ := J11*J22 - J12*J21;
+    detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
     if detJ <= 0 then
       raise Exception.Create('DKQ plate element has non-positive Jacobian determinant (inverted or degenerate shape)');
-    invJ11 :=  J22/detJ; invJ12 := -J12/detJ;
-    invJ21 := -J21/detJ; invJ22 :=  J11/detJ;
 
     for col := 1 to 12 do
     begin
@@ -1117,24 +926,8 @@ begin
       B[3, col] := PhysWx_y[col] + PhysWy_x[col];   // 2*kappa_xy
     end;
 
-    // BtD = B^T * D  (12x3)
-    for i := 1 to 12 do
-      for jc := 1 to 3 do
-      begin
-        BtD[i, jc] := 0;
-        for k := 1 to 3 do
-          BtD[i, jc] := BtD[i, jc] + B[k, i] * D[k, jc];
-      end;
-
-    // Result += (BtD * B) * detJ * weight
-    for i := 1 to 12 do
-      for jc := 1 to 12 do
-      begin
-        acc := 0;
-        for k := 1 to 3 do
-          acc := acc + BtD[i, k] * B[k, jc];
-        Result[i, jc] := Result[i, jc] + acc * detJ * gp[g].Weight;
-      end;
+    // Result += B^T * D * B * detJ * weight
+    AccumBtDB(Result, B, D, 3, 12, detJ * gp[g].Weight);
   end;
 end;
 
@@ -1207,77 +1000,30 @@ end;
 function QuadShellStiffness3D(E, Nu, Thickness, DrillFactor: Double;
   x1, y1, z1, x2, y2, z2, x3, y3, z3, x4, y4, z4: Double): TElemMatrix;
 var
-  ex, ey, ez, edge1, edge2, nrm, rel: TVec3;
+  F: TFrame3;
+  p: array[1..4] of TVec3;
   lx, ly: array[1..4] of Double;
-  KeLocal: TElemMatrix; // 24x24
-  T: array[1..24, 1..24] of Double;
-  KeT: array[1..24, 1..24] of Double;
-  i, jc, k, blk: Integer;
+  i: Integer;
 begin
-  // Same local-basis construction as QuadMembraneStiffness3D (see its
-  // comments); duplicated rather than shared because it's five short
-  // lines and pulling it into its own function would need TVec3
-  // exposed beyond this unit for no real benefit yet.
-  edge1[0] := x2 - x1; edge1[1] := y2 - y1; edge1[2] := z2 - z1;
-  edge2[0] := x4 - x1; edge2[1] := y4 - y1; edge2[2] := z4 - z1;
-  if VNorm(edge1) <= 0 then
-    raise Exception.Create('Quad shell element has a zero-length 1-2 edge (coincident nodes)');
-  ex := VNormalize(edge1);
-  nrm := VCross(edge1, edge2);
-  if VNorm(nrm) <= 0 then
-    raise Exception.Create('Quad shell element is degenerate (nodes 1, 2, 4 are collinear)');
-  ez := VNormalize(nrm);
-  ey := VCross(ez, ex);
+  p[1] := Vec3(x1, y1, z1); p[2] := Vec3(x2, y2, z2);
+  p[3] := Vec3(x3, y3, z3); p[4] := Vec3(x4, y4, z4);
+
+  // Same local-basis construction as QuadMembraneStiffness3D.
+  F := QuadFrame(p[1], p[2], p[4],
+    'Quad shell element has a zero-length 1-2 edge (coincident nodes)',
+    'Quad shell element is degenerate (nodes 1, 2, 4 are collinear)');
 
   lx[1] := 0; ly[1] := 0;
-  rel[0] := x2 - x1; rel[1] := y2 - y1; rel[2] := z2 - z1;
-  lx[2] := rel[0]*ex[0]+rel[1]*ex[1]+rel[2]*ex[2];
-  ly[2] := rel[0]*ey[0]+rel[1]*ey[1]+rel[2]*ey[2];
-  rel[0] := x3 - x1; rel[1] := y3 - y1; rel[2] := z3 - z1;
-  lx[3] := rel[0]*ex[0]+rel[1]*ex[1]+rel[2]*ex[2];
-  ly[3] := rel[0]*ey[0]+rel[1]*ey[1]+rel[2]*ey[2];
-  rel[0] := x4 - x1; rel[1] := y4 - y1; rel[2] := z4 - z1;
-  lx[4] := rel[0]*ex[0]+rel[1]*ex[1]+rel[2]*ex[2];
-  ly[4] := rel[0]*ey[0]+rel[1]*ey[1]+rel[2]*ey[2];
+  for i := 2 to 4 do
+    ProjectToFrame(F, p[1], p[i], lx[i], ly[i]);
 
-  KeLocal := QuadShellStiffnessLocal(E, Nu, Thickness, DrillFactor,
-    lx[1], ly[1], lx[2], ly[2], lx[3], ly[3], lx[4], ly[4]);
-
-  // T: global (x,y,z,rx,ry,rz)*4 -> local (u,v,w,rx,ry,rz)*4. Rotation
-  // dof transform by the same Lam as translations do (a proper vector
-  // under a pure orthonormal-frame rotation) -- each node's 6x6 block
-  // is block-diagonal [[Lam,0],[0,Lam]].
-  for i := 1 to 24 do
-    for jc := 1 to 24 do
-      T[i, jc] := 0;
-  for blk := 0 to 3 do
-  begin
-    T[6*blk+1, 6*blk+1] := ex[0]; T[6*blk+1, 6*blk+2] := ex[1]; T[6*blk+1, 6*blk+3] := ex[2];
-    T[6*blk+2, 6*blk+1] := ey[0]; T[6*blk+2, 6*blk+2] := ey[1]; T[6*blk+2, 6*blk+3] := ey[2];
-    T[6*blk+3, 6*blk+1] := ez[0]; T[6*blk+3, 6*blk+2] := ez[1]; T[6*blk+3, 6*blk+3] := ez[2];
-    T[6*blk+4, 6*blk+4] := ex[0]; T[6*blk+4, 6*blk+5] := ex[1]; T[6*blk+4, 6*blk+6] := ex[2];
-    T[6*blk+5, 6*blk+4] := ey[0]; T[6*blk+5, 6*blk+5] := ey[1]; T[6*blk+5, 6*blk+6] := ey[2];
-    T[6*blk+6, 6*blk+4] := ez[0]; T[6*blk+6, 6*blk+5] := ez[1]; T[6*blk+6, 6*blk+6] := ez[2];
-  end;
-
-  // KeT = KeLocal * T
-  for i := 1 to 24 do
-    for jc := 1 to 24 do
-    begin
-      KeT[i, jc] := 0;
-      for k := 1 to 24 do
-        KeT[i, jc] := KeT[i, jc] + KeLocal[i, k] * T[k, jc];
-    end;
-
-  // Result = T^T * KeT
-  Result := NewElemMatrix(24);
-  for i := 1 to 24 do
-    for jc := 1 to 24 do
-    begin
-      Result[i, jc] := 0;
-      for k := 1 to 24 do
-        Result[i, jc] := Result[i, jc] + T[k, i] * KeT[k, jc];
-    end;
+  // T: global (x,y,z,rx,ry,rz)*4 -> local (u,v,w,rx,ry,rz)*4. Rotation dof
+  // transform by the same Lam as translations (a proper vector under a pure
+  // orthonormal-frame rotation), so each node is two 3x3 blocks: 8 in all.
+  Result := TransformBlockDiag(
+    QuadShellStiffnessLocal(E, Nu, Thickness, DrillFactor,
+      lx[1], ly[1], lx[2], ly[2], lx[3], ly[3], lx[4], ly[4]),
+    F, 3, 8);
 end;
 
 function ElementStiffnessFor(const Model: TModel;

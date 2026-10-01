@@ -65,14 +65,21 @@ begin
     SL.Add('');
 
     SL.Add('[PROPERTIES]');
-    SL.Add('# id, type, material, area[, Iy, Iz, J]    (shellq4/shellq8: id, type, material, thickness)');
+    SL.Add('# id, type, material, area[, Iy, Iz, J[, Cy, Cz, Rt]]    (shellq4/shellq8: id, type, material, thickness)');
     for i := 0 to High(Model.Properties) do
     begin
       if Model.Properties[i].ElementType = 'beam' then
-        SL.Add(Format('%d, %s, %d, %s, %s, %s, %s',
-          [Model.Properties[i].Id, Model.Properties[i].ElementType, Model.Properties[i].MaterialId,
-           D2S(Model.Properties[i].Area), D2S(Model.Properties[i].Iy),
-           D2S(Model.Properties[i].Iz), D2S(Model.Properties[i].J)]))
+        if (Model.Properties[i].Cy <> 0) or (Model.Properties[i].Cz <> 0) or (Model.Properties[i].Rt <> 0) then
+          SL.Add(Format('%d, %s, %d, %s, %s, %s, %s, %s, %s, %s',
+            [Model.Properties[i].Id, Model.Properties[i].ElementType, Model.Properties[i].MaterialId,
+             D2S(Model.Properties[i].Area), D2S(Model.Properties[i].Iy),
+             D2S(Model.Properties[i].Iz), D2S(Model.Properties[i].J),
+             D2S(Model.Properties[i].Cy), D2S(Model.Properties[i].Cz), D2S(Model.Properties[i].Rt)]))
+        else
+          SL.Add(Format('%d, %s, %d, %s, %s, %s, %s',
+            [Model.Properties[i].Id, Model.Properties[i].ElementType, Model.Properties[i].MaterialId,
+             D2S(Model.Properties[i].Area), D2S(Model.Properties[i].Iy),
+             D2S(Model.Properties[i].Iz), D2S(Model.Properties[i].J)]))
       else if (Model.Properties[i].ElementType = 'shellq4') or (Model.Properties[i].ElementType = 'shellq8') then
         SL.Add(Format('%d, %s, %d, %s',
           [Model.Properties[i].Id, Model.Properties[i].ElementType, Model.Properties[i].MaterialId,
@@ -145,7 +152,8 @@ begin
     end;
 
     if (Model.SolverParams.Tolerance <> 1e-9) or Model.SolverParams.HasResultsFile
-       or (Model.SolverParams.PivotTolerance <> 1e-10) or not Model.SolverParams.Verbose then
+       or (Model.SolverParams.PivotTolerance <> 1e-10) or not Model.SolverParams.Verbose
+       or (Model.SolverParams.BeamDivisions <> 4) or not Model.SolverParams.ElementResults then
     begin
       SL.Add('[SOLVERPARAMS]');
       SL.Add('Tolerance=' + D2S(Model.SolverParams.Tolerance));
@@ -155,6 +163,10 @@ begin
         SL.Add('ResultsFile=' + Model.SolverParams.ResultsFile);
       if not Model.SolverParams.Verbose then
         SL.Add('Verbose=0');
+      if Model.SolverParams.BeamDivisions <> 4 then
+        SL.Add('BeamDivisions=' + IntToStr(Model.SolverParams.BeamDivisions));
+      if not Model.SolverParams.ElementResults then
+        SL.Add('ElementResults=0');
     end;
 
     SL.LineBreak := #10;

@@ -27,7 +27,7 @@ Units=SI (N, m, Pa, rad)
 1, 210e9, -, -
 
 [PROPERTIES]
-# id, type, material, area[, Iy, Iz, J]    (Iy/Iz/J only for beam)
+# id, type, material, area[, Iy, Iz, J[, Cy, Cz, Rt]]    (Iy/Iz/J only for beam; Cy/Cz/Rt optional, for stresses)
 # id, type, material, thickness             (shellq4, shellq8)
 1, truss, 1, 0.001
 
@@ -128,6 +128,8 @@ line in its `uses` clause, nothing else.
 | `Tolerance` | `1e-9` | Convergence tolerance for `linsparse`'s PCG iteration; also scales the equilibrium self-check in verbose output. `linstatic` factorizes directly and `modal` uses a Jacobi eigensolver; neither reads this. |
 | `PivotTolerance` | `1e-10` | `linstatic` only. A pivot smaller than `PivotTolerance` × (largest original diagonal) is reported as a singular system. Must be strictly between 0 and 1. Lower it only for a legitimately extreme model — e.g. a shell thinner than about 0.03 mm in SI metres, where the rotational-vs-translational stiffness ratio itself falls below the default. Don't go much below `1e-13`: a genuine mechanism produces pivots around `1e-16` relative, and lowering the threshold too far lets one through as a "solved" system. |
 | `Verbose` | `1` | `1`/`true`/`yes` or `0`/`false`/`no`. See "Verbose output" below. |
+| `BeamDivisions` | `4` | Whole number 1–200. Each beam is cut into this many equal segments for element-force output, giving `BeamDivisions + 1` stations (both ends included). Same idea as Strand7's beam divisions. `linstatic` and `linsparse` only. |
+| `ElementResults` | `1` | `1`/`true`/`yes` or `0`/`false`/`no`. `0` skips element forces and stresses entirely (nodal results only). See "Element forces and stresses" below. |
 | `ResultsFile` | *(stdout)* | See "Results file" below. |
 
 ## Verbose output
@@ -142,6 +144,49 @@ tolerance). Every narrative line starts with `#`, so the plain
 `key=value` result lines are unchanged and still trivial to scrape
 (`grep -v '^#'`; `fem_regress` already does this). Set `Verbose=0` to
 get only the terse machine-readable output.
+
+## Element forces and stresses
+
+After each load case and combination, `linstatic` and `linsparse` recover
+the forces inside every truss and beam from the solved displacements and
+print them as `ELEM.<id>.…` lines (plus a readable table when
+`Verbose=1`). Combinations are recovered from the *combined*
+displacements, so stresses and von Mises/Tresca are computed from the
+combined state, not by combining the individual cases' von Mises values.
+
+| Element | Keys (all within the case's normal key prefix) |
+|---|---|
+| truss | `ELEM.<id>.N` (tension +), `.SIGMA`, `.VM`, `.TRESCA` |
+| beam | `ELEM.<id>.S<k>.` then `POS` (distance from node 1); `N`, `VY`, `VZ`, `T`, `MY`, `MZ` (member-local axes); `GFX`, `GFY`, `GFZ`, `GMX`, `GMY`, `GMZ` (same resultants on global axes); `SIGAX`, `SIGMAX`, `SIGMIN`, `TAU`, `VM`, `TRESCA` — `k` runs `0` (node 1) to `BeamDivisions` (node 2) |
+
+**Sign convention.** Beam resultants are the forces on the section's
+*positive* face (the face looking toward node 2): `N` is tension-positive,
+moments follow the right-hand rule, and the extreme-fibre stress at
+section point (y, z) is `N/A − Mz·y/Iz + My·z/Iy`. A downward load on a
+horizontal cantilever therefore gives `Mz < 0` at the support, with
+tension on the upper (+y) fibre.
+
+**Principal vs. geometric axes.** A beam section is entered as `Iy` and
+`Iz` about its own local axes with no product of inertia, so those local
+axes are both the geometric and the principal axes of the section; the
+member-local values are the principal-axes values. The `G…` keys give
+the same resultants on the global X/Y/Z axes.
+
+**Stresses need section dimensions.** `A`, `Iy`, `Iz` and `J` alone do not
+say how far the extreme fibres are from the centroid, so bending stress
+needs two optional extra property fields:
+
+- `Cy`, `Cz` — distance from the centroid to the extreme fibre along local
+  y and local z (give both or neither). With them, `SIGMAX`/`SIGMIN` are the
+  largest and smallest axial+bending stress over the four section corners
+  (±Cy, ±Cz), and `VM`/`TRESCA` are the worst corner.
+- `Rt` — outer-fibre radius for torsional shear, `TAU = T·Rt/J` (exact for
+  a circular section, an estimate for others).
+
+Without `Cy`/`Cz` the stresses are axial only (`N/A`); without `Rt` there
+is no torsional shear. Von Mises is `√(σ² + 3τ²)` and Tresca `√(σ² + 4τ²)`.
+Transverse (flexural) shear stress is not included — it depends on the
+section shape, which is not described here.
 
 ## Results file
 

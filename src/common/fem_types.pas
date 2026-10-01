@@ -26,6 +26,12 @@ type
     Area: Double;          // cross-sectional area (truss, beam)
     Iy, Iz: Double;        // second moment of area about local y / local z axis (beam)
     J: Double;             // torsion constant (beam)
+    Cy, Cz: Double;        // beam, optional (0 = not given): distance from the section centroid to
+                           // the extreme fibre along local y / local z. Only used by element stress
+                           // recovery: the extreme-fibre bending stress is My*Cz/Iy and Mz*Cy/Iz.
+    Rt: Double;            // beam, optional (0 = not given): outer-fibre radius for torsional shear,
+                           // tau = T*Rt/J (exact for a circular section; a conservative estimate
+                           // for others). Only used by element stress recovery.
     Thickness: Double;     // shell thickness (shellq4)
   end;
 
@@ -62,6 +68,11 @@ type
                             // itself falls below the default. Only linstatic uses it.
     HasResultsFile: Boolean;
     ResultsFile: string; // if set, solver writes results here instead of stdout
+    BeamDivisions: Integer;   // number of equal segments each beam is cut into for element
+                              // result output (stations = divisions + 1, incl. both ends).
+                              // Strand7's "beam divisions". Default 4; range 1..200.
+    ElementResults: Boolean;  // default True -- emit element forces/stresses (ELEM.* keys and
+                              // the verbose tables). ElementResults=0 skips them entirely.
     Verbose: Boolean;    // default True -- tutorial-style narrative output
                          // (model/case summaries, readable result tables,
                          // an equilibrium self-check) alongside the plain

@@ -1,0 +1,37 @@
+# FreePascal FEM Suite - native model format
+[HEADER]
+Solver=linstatic
+Units=SI (N, m, Pa, rad)
+
+[NODES]
+# id, x, y, z
+1, 0, 0, 0
+2, 2, 0, 0
+
+[MATERIALS]
+# id, E, nu, rho
+1, 200000000000, 0.3, -
+
+[PROPERTIES]
+# circular section R=0.05: A=pi R^2, Iy=Iz=pi R^4/4, J=pi R^4/2; Cy=Cz=Rt=R
+1, beam, 1, 0.0078539816, 0.0000049087385, 0.0000049087385, 0.000009817477, 0.05, 0.05, 0.05
+
+[ELEMENTS]
+1, beam, 1, 2, 1
+
+[FREEDOMCASE default]
+1, x, 0
+1, y, 0
+1, z, 0
+1, rx, 0
+1, ry, 0
+1, rz, 0
+
+[LOADCASE default]
+2, x, 20000
+2, rx, 300
+
+[SOLVERPARAMS]
+Tolerance=1E-9
+BeamDivisions=2
+Verbose=0

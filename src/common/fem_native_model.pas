@@ -143,6 +143,8 @@ begin
   Result.SolverParams.PivotTolerance := 1e-10;
   Result.SolverParams.HasResultsFile := False;
   Result.SolverParams.Verbose := True;
+  Result.SolverParams.BeamDivisions := 4;
+  Result.SolverParams.ElementResults := True;
 
   secName := '';
   fcIdx := -1; lcIdx := -1; combIdx := -1;
@@ -241,7 +243,7 @@ begin
 
       else if secName = 'PROPERTIES' then
       begin
-        // id, type, material, area[, Iy, Iz, J]    (truss/beam)
+        // id, type, material, area[, Iy, Iz, J[, Cy, Cz, Rt]]    (truss/beam)
         // id, type, material, thickness             (shellq4, shellq8)
         F := SplitFields(line);
         GrowProps;
@@ -257,6 +259,9 @@ begin
           Result.Properties[PropCount - 1].Iy := F2D(F, 4, 'Iy');
           Result.Properties[PropCount - 1].Iz := F2D(F, 5, 'Iz');
           Result.Properties[PropCount - 1].J := F2D(F, 6, 'J');
+          Result.Properties[PropCount - 1].Cy := F2D(F, 7, 'Cy');
+          Result.Properties[PropCount - 1].Cz := F2D(F, 8, 'Cz');
+          Result.Properties[PropCount - 1].Rt := F2D(F, 9, 'Rt');
         end;
       end
 
@@ -382,6 +387,26 @@ begin
                 [i + 1, valStr]);
             if (Result.SolverParams.PivotTolerance <= 0) or (Result.SolverParams.PivotTolerance >= 1) then
               raise Exception.CreateFmt('line %d, [SOLVERPARAMS]: PivotTolerance must be between 0 and 1 (exclusive), got "%s"',
+                [i + 1, valStr]);
+          end
+          else if key = 'BEAMDIVISIONS' then
+          begin
+            if not TryStrToInt(valStr, Result.SolverParams.BeamDivisions) then
+              raise Exception.CreateFmt('line %d, [SOLVERPARAMS]: BeamDivisions must be a whole number, got "%s"',
+                [i + 1, valStr]);
+            if (Result.SolverParams.BeamDivisions < 1) or (Result.SolverParams.BeamDivisions > 200) then
+              raise Exception.CreateFmt('line %d, [SOLVERPARAMS]: BeamDivisions must be between 1 and 200, got "%s"',
+                [i + 1, valStr]);
+          end
+          else if key = 'ELEMENTRESULTS' then
+          begin
+            valStr := LowerCase(valStr);
+            if (valStr = '0') or (valStr = 'false') or (valStr = 'no') then
+              Result.SolverParams.ElementResults := False
+            else if (valStr = '1') or (valStr = 'true') or (valStr = 'yes') then
+              Result.SolverParams.ElementResults := True
+            else
+              raise Exception.CreateFmt('line %d, [SOLVERPARAMS]: ElementResults must be 0/1 or false/true, got "%s"',
                 [i + 1, valStr]);
           end
           else if key = 'RESULTSFILE' then

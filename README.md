@@ -34,6 +34,21 @@ third-party dependencies — only the FPC standard RTL (`fpjson`,
     storage + in-place LDL^T factorization + solve. Solver-agnostic; any
     solver that needs to solve `Kx=b` for a sparse symmetric system uses
     this.
+  - `fem_matrix.pas` — shared small-matrix/vector utilities: 3D vector ops,
+    local-frame construction for quads, closed-form 2x2/3x3 inverses, a
+    general dense inverse/multiply/transpose, and the structured element
+    transforms (`TransformBlockDiag` for `T^T*K*T`, `AccumBtDB` for
+    `B^T*D*B`) that `fem_elements` uses everywhere instead of per-element
+    inline loops. Pure Pascal; an optional SSE2 `RowAxpy` kernel is
+    available with `-dFEM_USE_ASM` (x86-64 Linux/Win64). Verified by
+    `src/tools/matrix_test`.
+  - `fem_results.pas` / `fem_results_out.pas` — element force and stress
+    recovery (truss axial force; beam shear/moment/torque at
+    `BeamDivisions` stations, in local and global axes, with extreme-fibre
+    stress, von Mises and Tresca) and the shared writer that `linstatic`
+    and `linsparse` both use to print it. See "Element forces and stresses"
+    in `docs/native_format.md`. Checked by regression cases 020–024 and
+    `src/tools/results_test`.
   - `fem_elements.pas` — element stiffness formulations: the 3D 2-node
     space-truss (axial bar) and the 3D 2-node Euler-Bernoulli beam
     (axial + biaxial bending + torsion). Both return a generic dynamically-

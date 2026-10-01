@@ -20,7 +20,9 @@ this codebase, not a simplified stand-in.
 2. **[A cantilever beam](02_cantilever_beam.md)** — bending stiffness,
    rotational degrees of freedom, and a fixed-end moment reaction —
    plus a first look at what the equilibrium check does and doesn't
-   cover.
+   cover. Also introduces element forces: shear and bending-moment
+   stations along the beam, stresses, and the sign conventions behind
+   them.
 3. **[A portal frame](03_portal_frame.md)** — multiple elements sharing
    nodes, static indeterminacy, and why verifying a model too complex
    for hand calculation needs a genuinely independent second method, not

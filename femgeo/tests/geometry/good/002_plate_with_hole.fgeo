@@ -1,0 +1,39 @@
+# A flat rectangular plate with one circular hole (the outer loop
+# from 001_rectangle plus a CIRCLE curve, its own closed loop of one
+# edge whose start and end vertex are the same, and that loop used as
+# an INNER loop of the face) -- directly relevant to a rivet-hole
+# panel, and the fixture that exercises FACE's INNER loop syntax
+# (spec section 10) and a self-closing (single-vertex-pair) circular
+# edge, neither of which 001_rectangle touches.
+FEM3DGEO 1.0
+UNITS length=mm
+COORDSYS CARTESIAN
+TOLERANCE coincidence=0.001 edge=0.001 surface=0.001 feature=0.01 angle=0.0001
+SOURCE format="MANUAL" name="plate with hole fixture"
+
+VERTEX 1 0 0 0
+VERTEX 2 40 0 0
+VERTEX 3 40 20 0
+VERTEX 4 0 20 0
+VERTEX 5 20 10 0
+
+CURVE 1 LINE 0 0 0 40 0 0
+CURVE 2 LINE 40 0 0 0 20 0
+CURVE 3 LINE 40 20 0 -40 0 0
+CURVE 4 LINE 0 20 0 0 -20 0
+CURVE 5 CIRCLE 20 10 0 0 0 1 4
+
+EDGE 1 1 2 1 0 1 +1
+EDGE 2 2 3 2 0 1 +1
+EDGE 3 3 4 3 0 1 +1
+EDGE 4 4 1 4 0 1 +1
+EDGE 5 5 5 5 0 6.283185307179586 +1
+
+LOOP 1 EDGE 1 +1 EDGE 2 +1 EDGE 3 +1 EDGE 4 +1
+LOOP 2 EDGE 5 +1
+
+SURFACE 1 PLANE 0 0 0 0 0 1
+
+FACE 1 1 OUTER 1 INNER 2
+
+BODY 1 FACE 1

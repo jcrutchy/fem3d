@@ -94,6 +94,8 @@ begin
     Result.SolverParams.Tolerance := 1e-9;
     Result.SolverParams.PivotTolerance := 1e-10;
     Result.SolverParams.Verbose := True;
+    Result.SolverParams.BeamDivisions := 4;
+    Result.SolverParams.ElementResults := True;
 
     JSolverParams := GetObj(JObj, 'solverParams');
     if Assigned(JSolverParams) then
@@ -101,6 +103,8 @@ begin
       Result.SolverParams.Tolerance := JSolverParams.Get('tolerance', 1e-9);
       Result.SolverParams.PivotTolerance := JSolverParams.Get('pivotTolerance', 1e-10);
       Result.SolverParams.Verbose := JSolverParams.Get('verbose', True);
+      Result.SolverParams.BeamDivisions := JSolverParams.Get('beamDivisions', 4);
+      Result.SolverParams.ElementResults := JSolverParams.Get('elementResults', True);
     end;
 
     // nodes
@@ -150,6 +154,9 @@ begin
         Result.Properties[i].Iy := JItem.Get('Iy', 0.0);
         Result.Properties[i].Iz := JItem.Get('Iz', 0.0);
         Result.Properties[i].J := JItem.Get('J', 0.0);
+        Result.Properties[i].Cy := JItem.Get('Cy', 0.0);
+        Result.Properties[i].Cz := JItem.Get('Cz', 0.0);
+        Result.Properties[i].Rt := JItem.Get('Rt', 0.0);
         Result.Properties[i].Thickness := JItem.Get('thickness', 0.0);
       end;
     end;

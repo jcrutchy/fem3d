@@ -1,14 +1,11 @@
-# A single flat rectangular face, 10x5mm, one body -- the smallest
-# complete valid model exercising every FEM3DGEO 1.0 record type
-# (VERTEX, CURVE, EDGE, LOOP, SURFACE, FACE, BODY). Written in
-# canonical form (ascending IDs, explicit +1 signs) so a re-write of
-# this file by any conforming tool should reproduce it byte-for-byte
-# (see run_roundtrip_test.lpr).
+# GEO001: EDGE 4 references vertex 99, which does not exist -- a dangling
+# reference. Based on good/001_rectangle.fgeo with vertex 1 renumbered to 99
+# on EDGE 4 only.
 FEM3DGEO 1.0
 UNITS length=mm
 COORDSYS CARTESIAN
 TOLERANCE coincidence=0.001 edge=0.001 surface=0.001 feature=0.01 angle=0.0001
-SOURCE format="MANUAL" name="rectangle fixture"
+SOURCE format="MANUAL" name="tutorial rectangle"
 
 VERTEX 1 0 0 0
 VERTEX 2 10 0 0
@@ -23,7 +20,7 @@ CURVE 4 LINE 0 5 0 0 -5 0
 EDGE 1 1 2 1 0 1 +1
 EDGE 2 2 3 2 0 1 +1
 EDGE 3 3 4 3 0 1 +1
-EDGE 4 4 1 4 0 1 +1
+EDGE 4 4 99 4 0 1 +1
 
 LOOP 1 EDGE 1 +1 EDGE 2 +1 EDGE 3 +1 EDGE 4 +1
 

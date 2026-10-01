@@ -1,17 +1,13 @@
-# A single flat rectangular face, 10x5mm, one body -- the smallest
-# complete valid model exercising every FEM3DGEO 1.0 record type
-# (VERTEX, CURVE, EDGE, LOOP, SURFACE, FACE, BODY). Written in
-# canonical form (ascending IDs, explicit +1 signs) so a re-write of
-# this file by any conforming tool should reproduce it byte-for-byte
-# (see run_roundtrip_test.lpr).
+# GEO002: VERTEX 2 reuses id 1, already used by the first vertex --
+# IDs must be unique within an entity class (spec rule 1).
 FEM3DGEO 1.0
 UNITS length=mm
 COORDSYS CARTESIAN
 TOLERANCE coincidence=0.001 edge=0.001 surface=0.001 feature=0.01 angle=0.0001
-SOURCE format="MANUAL" name="rectangle fixture"
+SOURCE format="MANUAL" name="tutorial rectangle"
 
 VERTEX 1 0 0 0
-VERTEX 2 10 0 0
+VERTEX 1 10 0 0
 VERTEX 3 10 5 0
 VERTEX 4 0 5 0
 

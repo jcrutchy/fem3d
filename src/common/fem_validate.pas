@@ -236,6 +236,17 @@ begin
             Errs.Add(Format('Property %d: Iz must be positive for a beam', [prop.Id]));
           if prop.J <= 0 then
             Errs.Add(Format('Property %d: J (torsion constant) must be positive for a beam', [prop.Id]));
+          CheckFinite(prop.Cy, Format('Property %d: Cy', [prop.Id]));
+          CheckFinite(prop.Cz, Format('Property %d: Cz', [prop.Id]));
+          CheckFinite(prop.Rt, Format('Property %d: Rt', [prop.Id]));
+          if prop.Cy < 0 then
+            Errs.Add(Format('Property %d: Cy (extreme-fibre distance) must not be negative', [prop.Id]));
+          if prop.Cz < 0 then
+            Errs.Add(Format('Property %d: Cz (extreme-fibre distance) must not be negative', [prop.Id]));
+          if prop.Rt < 0 then
+            Errs.Add(Format('Property %d: Rt (torsional shear radius) must not be negative', [prop.Id]));
+          if (prop.Cy > 0) <> (prop.Cz > 0) then
+            Errs.Add(Format('Property %d: Cy and Cz (extreme-fibre distances) must be given together -- or both omitted for axial-only beam stresses', [prop.Id]));
           if MatIdx.TryGetValue(prop.MaterialId, matI) and not Model.Materials[matI].HasNu then
             Errs.Add(Format('Property %d: beam requires its material (%d) to specify nu (Poisson''s ratio), used to derive the shear modulus G',
               [prop.Id, prop.MaterialId]));
@@ -544,6 +555,8 @@ begin
   // a number at all (see fem_native_model's F2D-style strict parsing);
   // this catches the values that parse fine but aren't physically usable
   // -- 0, negative, NaN, or a magnitude so extreme it can only be a typo.
+  if (Model.SolverParams.BeamDivisions < 1) or (Model.SolverParams.BeamDivisions > 200) then
+    Errs.Add(Format('SolverParams: BeamDivisions must be between 1 and 200, got %d', [Model.SolverParams.BeamDivisions]));
   if IsNan(Model.SolverParams.Tolerance) or IsInfinite(Model.SolverParams.Tolerance) then
     Errs.Add('SolverParams: Tolerance must be a finite number')
   else if Model.SolverParams.Tolerance <= 0 then

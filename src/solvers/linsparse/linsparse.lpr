@@ -5,7 +5,7 @@ program linsparse;
 uses
   {$IFDEF UNIX}cthreads,{$ENDIF}
   SysUtils, Classes, Generics.Collections, Math,
-  fem_types, fem_native_model, fem_validate, fem_index, fem_dofmap, fem_elements, fem_pcg;
+  fem_types, fem_native_model, fem_validate, fem_index, fem_dofmap, fem_elements, fem_pcg, fem_results_out;
 
 const
   ExitOk           = 0;
@@ -489,6 +489,10 @@ begin
       else
         KeyPrefix := Model.LoadCases[lcIdx].Id + '.';
       EmitCaseResults(KeyPrefix, CaseFullU[lcIdx], CaseReact[lcIdx]);
+      if Model.SolverParams.ElementResults then
+        EmitElementResults(OutF, KeyPrefix,
+          Format('freedom case "%s", load case "%s"', [FC.Id, Model.LoadCases[lcIdx].Id]),
+          Model, NodeIdx, MatIdx, PropIdx, DofMap, CaseFullU[lcIdx], FS);
 
       if Model.SolverParams.Verbose then
       begin
@@ -525,6 +529,10 @@ begin
       else
         KeyPrefix := Comb.Id + '.';
       EmitCaseResults(KeyPrefix, ComboU, ComboR);
+      if Model.SolverParams.ElementResults then
+        EmitElementResults(OutF, KeyPrefix,
+          Format('freedom case "%s", combination "%s"', [FC.Id, Comb.Id]),
+          Model, NodeIdx, MatIdx, PropIdx, DofMap, ComboU, FS);
 
       if Model.SolverParams.Verbose then
       begin
