@@ -27,6 +27,25 @@ unit fem_results;
 //
 //   Truss: N = EA/L * (elongation); + = tension.
 //
+//   Shells (shellq4, shellq8) are reported in the element's own axes: x along
+//   the edge from node 1 to node 2, z the normal from the right-hand rule on
+//   nodes 1-2-4 (so counter-clockwise numbering seen from +z), y completing
+//   the set. The axes are also reported so results can be resolved globally.
+//       Nxx Nyy Nxy   membrane force per unit length (+ = tension)
+//       Mxx Myy Mxy   bending moment per unit length; positive Mxx is
+//                     "sagging" about the local y axis, i.e. tension on the
+//                     bottom (-z) face, as for a beam bending in the x-z plane
+//       Qx Qy         transverse shear force per unit length (shellq8 only:
+//                     the thin-plate shellq4 does not carry a shear strain)
+//   Stress on the top (+z) and bottom (-z) faces, plane stress (sigma_zz = 0):
+//       sigma_top = N/t - 6M/t^2     sigma_bot = N/t + 6M/t^2
+//   Principal stresses, von Mises and Tresca are computed from each face's
+//   (sxx, syy, txy). Transverse shear stress is not included.
+//   Values are evaluated at the element centroid and at the four corner
+//   nodes, straight from the element's own displacement field -- NOT
+//   averaged with neighbouring elements, so expect a jump across element
+//   boundaries where the mesh is too coarse to resolve the stress gradient.
+//
 // BEAM AXES: "principal" vs "geometric"
 //   A beam section is described here by Iy and Iz taken about the section's
 //   own local y and z axes, with no product of inertia Iyz. Those local axes
@@ -38,7 +57,7 @@ unit fem_results;
 interface
 
 uses
-  fem_types, fem_index, fem_matrix, fem_elements, SysUtils, Math;
+  fem_types, fem_index, fem_matrix, fem_elements, fem_plate_shapefuncs, SysUtils, Math;
 
 type
   TTrussResult = record
@@ -74,6 +93,26 @@ type
     VonMises, Tresca: Double;
   end;
 
+type
+  // One sampling point of a shell element.
+  TShellPoint = record
+    Xi, Eta: Double;            // natural coordinates of the point
+    Nxx, Nyy, Nxy: Double;      // membrane force / length
+    Mxx, Myy, Mxy: Double;      // bending moment / length
+    Qx, Qy: Double;             // transverse shear force / length (HasShear only)
+    Top, Bot: TPlaneStress;     // stress on the +z / -z faces
+  end;
+
+  TShellResult = record
+    NodeCount: Integer;         // 4 (shellq4) or 8 (shellq8)
+    HasShear: Boolean;          // shellq8 only
+    Thickness: Double;
+    Frame: TFrame3;             // element axes in global coordinates
+    // [0] = centroid; [1..4] = the corner nodes 1..4 (midside nodes of a
+    // shellq8 are not sampled separately)
+    Points: array[0..4] of TShellPoint;
+  end;
+
 // ---- failure-criterion helpers (shared by every element type) -----------
 // Combined axial + shear (beam fibres): sigma_vm = sqrt(s^2 + 3 t^2),
 // Tresca = 2*tau_max = sqrt(s^2 + 4 t^2).
@@ -94,6 +133,10 @@ function TrussResultFor(const Model: TModel;
 function BeamResultFor(const Model: TModel;
   NodeIdx, MatIdx, PropIdx: TIntIntMap; const el: TElement;
   const Ue: TDoubleArray; Divisions: Integer): TBeamResult;
+
+function ShellResultFor(const Model: TModel;
+  NodeIdx, MatIdx, PropIdx: TIntIntMap; const el: TElement;
+  const Ue: TDoubleArray): TShellResult;
 
 implementation
 
@@ -272,6 +315,181 @@ begin
       stn.Tresca := TrescaSigmaTau(stn.SigAxial, tau);
     end;
     Result.Stations[st] := stn;
+  end;
+end;
+
+function ShellResultFor(const Model: TModel;
+  NodeIdx, MatIdx, PropIdx: TIntIntMap; const el: TElement;
+  const Ue: TDoubleArray): TShellResult;
+const
+  PtXi:  array[0..4] of Double = (0.0, -1.0,  1.0, 1.0, -1.0);
+  PtEta: array[0..4] of Double = (0.0, -1.0, -1.0, 1.0,  1.0);
+var
+  prop: TProperty;
+  mat: TMaterial;
+  NN, i, r, c, pt, base: Integer;
+  t, cE, Dfac, Gmod, detJ: Double;
+  P: array[1..8] of TVec3;
+  node: TNode;
+  F: TFrame3;
+  lx, ly: TQuadCoords;
+  Lam: array[0..2, 0..2] of Double;
+  ul: array[1..48] of Double;
+  um: array[1..16] of Double;
+  uw: array[1..24] of Double;
+  wd: array[1..12] of Double;
+  // Flat row-major B matrices: the builders write rows with a stride equal to
+  // the element's own column count (2*NN, 24, 12), so index them the same way.
+  Bm: array[0..3 * 16 - 1] of Double;
+  Bb: array[0..3 * 24 - 1] of Double;
+  Bs: array[0..2 * 24 - 1] of Double;
+  Bk: array[0..3 * 12 - 1] of Double;
+  Op: TDKQOps;
+  sf4: TQuadShapeFuncs;
+  sf8: TQuad8ShapeFuncs;
+  eps: array[1..3] of Double;
+  kap: array[1..3] of Double;
+  gam: array[1..2] of Double;
+  px, py: array[1..4] of Double;
+  sp: TShellPoint;
+  sxxT, syyT, txyT, sxxB, syyB, txyB: Double;
+  s: Double;
+begin
+  prop := Model.Properties[PropIdx[el.PropertyId]];
+  mat := Model.Materials[MatIdx[prop.MaterialId]];
+  if el.ElementType = 'shellq8' then NN := 8 else NN := 4;
+  t := prop.Thickness;
+
+  for i := 1 to NN do
+  begin
+    node := Model.Nodes[NodeIdx[el.NodeIds[i - 1]]];
+    P[i] := Vec3(node.X, node.Y, node.Z);
+  end;
+  // Exactly the geometry the stiffness was built from.
+  QuadLocalGeometry(NN, P,
+    'Shell element has a zero-length 1-2 edge (coincident nodes)',
+    'Shell element is degenerate (nodes 1, 2, 4 are collinear)',
+    F, lx, ly);
+
+  for c := 0 to 2 do
+  begin
+    Lam[0][c] := F.ex[c]; Lam[1][c] := F.ey[c]; Lam[2][c] := F.ez[c];
+  end;
+
+  // global -> element-local dof: each node's translation triple and rotation
+  // triple rotate by Lam.
+  for i := 1 to NN do
+  begin
+    base := 6 * (i - 1);
+    for r := 0 to 2 do
+    begin
+      s := 0.0;
+      for c := 0 to 2 do s := s + Lam[r][c] * Ue[base + c + 1];
+      ul[base + r + 1] := s;
+      s := 0.0;
+      for c := 0 to 2 do s := s + Lam[r][c] * Ue[base + 3 + c + 1];
+      ul[base + 3 + r + 1] := s;
+    end;
+  end;
+
+  // membrane (u, v) and plate (w, rx, ry) sub-vectors
+  for i := 1 to NN do
+  begin
+    um[2 * (i - 1) + 1] := ul[6 * (i - 1) + 1];
+    um[2 * (i - 1) + 2] := ul[6 * (i - 1) + 2];
+    uw[3 * (i - 1) + 1] := ul[6 * (i - 1) + 3];
+    uw[3 * (i - 1) + 2] := ul[6 * (i - 1) + 4];
+    uw[3 * (i - 1) + 3] := ul[6 * (i - 1) + 5];
+  end;
+  if NN = 4 then
+  begin
+    // DKQ works in [w, w_x, w_y]: rx = +w_y, ry = -w_x (same remap the
+    // stiffness assembly uses).
+    for i := 1 to 4 do
+    begin
+      wd[3 * (i - 1) + 1] := ul[6 * (i - 1) + 3];
+      wd[3 * (i - 1) + 2] := -ul[6 * (i - 1) + 5];
+      wd[3 * (i - 1) + 3] := ul[6 * (i - 1) + 4];
+      px[i] := lx[i]; py[i] := ly[i];
+    end;
+    DKQOperators(px, py, Op);
+  end;
+
+  cE := mat.E / (1.0 - mat.Nu * mat.Nu);
+  Dfac := t * t * t / 12.0 * cE;
+  Gmod := mat.E / (2.0 * (1.0 + mat.Nu));
+
+  Result.NodeCount := NN;
+  Result.HasShear := NN = 8;
+  Result.Thickness := t;
+  Result.Frame := F;
+
+  for pt := 0 to 4 do
+  begin
+    FillChar(sp, SizeOf(sp), 0);
+    sp.Xi := PtXi[pt]; sp.Eta := PtEta[pt];
+
+    // ---- membrane strain -> force per length ----
+    if NN = 4 then
+    begin
+      sf4 := QuadShapeFuncsAt(sp.Xi, sp.Eta);
+      MembraneBAt(4, sf4.dNdXi, sf4.dNdEta, lx, ly, 'Quad shell element', @Bm[0], detJ);
+    end
+    else
+    begin
+      sf8 := Quad8ShapeFuncsAt(sp.Xi, sp.Eta);
+      MembraneBAt(8, sf8.dNdXi, sf8.dNdEta, lx, ly, 'Q8 quad shell element', @Bm[0], detJ);
+    end;
+    for r := 1 to 3 do
+    begin
+      eps[r] := 0.0;
+      for c := 1 to 2 * NN do
+        eps[r] := eps[r] + Bm[(r - 1) * 2 * NN + c - 1] * um[c];
+    end;
+    sp.Nxx := t * cE * (eps[1] + mat.Nu * eps[2]);
+    sp.Nyy := t * cE * (mat.Nu * eps[1] + eps[2]);
+    sp.Nxy := t * cE * (1.0 - mat.Nu) / 2.0 * eps[3];
+
+    // ---- plate curvature -> moment per length (and shear for shellq8) ----
+    if NN = 4 then
+    begin
+      DKQBAt(Op, px, py, sp.Xi, sp.Eta, @Bk[0], detJ);
+      for r := 1 to 3 do
+      begin
+        kap[r] := 0.0;
+        for c := 1 to 12 do kap[r] := kap[r] + Bk[(r - 1) * 12 + c - 1] * wd[c];
+      end;
+    end
+    else
+    begin
+      MindlinBAt(sf8, lx, ly, @Bb[0], @Bs[0], detJ);
+      for r := 1 to 3 do
+      begin
+        kap[r] := 0.0;
+        for c := 1 to 24 do kap[r] := kap[r] + Bb[(r - 1) * 24 + c - 1] * uw[c];
+      end;
+      for r := 1 to 2 do
+      begin
+        gam[r] := 0.0;
+        for c := 1 to 24 do gam[r] := gam[r] + Bs[(r - 1) * 24 + c - 1] * uw[c];
+      end;
+      sp.Qx := ShellQ8ShearFactor * Gmod * t * gam[1];
+      sp.Qy := ShellQ8ShearFactor * Gmod * t * gam[2];
+    end;
+    sp.Mxx := Dfac * (kap[1] + mat.Nu * kap[2]);
+    sp.Myy := Dfac * (mat.Nu * kap[1] + kap[2]);
+    sp.Mxy := Dfac * (1.0 - mat.Nu) / 2.0 * kap[3];
+
+    // ---- face stresses (plane stress): sigma = N/t -/+ 6M/t^2 ----
+    sxxT := sp.Nxx / t - 6.0 * sp.Mxx / (t * t);
+    syyT := sp.Nyy / t - 6.0 * sp.Myy / (t * t);
+    txyT := sp.Nxy / t - 6.0 * sp.Mxy / (t * t);
+    sxxB := sp.Nxx / t + 6.0 * sp.Mxx / (t * t);
+    syyB := sp.Nyy / t + 6.0 * sp.Myy / (t * t);
+    txyB := sp.Nxy / t + 6.0 * sp.Mxy / (t * t);
+    sp.Top := PlaneStressState(sxxT, syyT, txyT);
+    sp.Bot := PlaneStressState(sxxB, syyB, txyB);
+    Result.Points[pt] := sp;
   end;
 end;
 

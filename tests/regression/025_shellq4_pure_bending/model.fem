@@ -1,0 +1,46 @@
+# FreePascal FEM Suite - native model format
+[HEADER]
+Solver=linstatic
+Units=SI (N, m, Pa, rad)
+
+[NODES]
+# id, x, y, z
+1, 0, 0, 0
+2, 2, 0, 0
+3, 2, 1, 0
+4, 0, 1, 0
+
+[MATERIALS]
+# id, E, nu, rho
+1, 200000000000, 0.3, -
+
+[PROPERTIES]
+# id, type, material, thickness
+1, shellq4, 1, 0.05
+
+[ELEMENTS]
+# id, type, node1..., property
+1, shellq4, 1, 2, 3, 4, 1
+
+[FREEDOMCASE default]
+# Rigid-body modes removed at node 1 (the origin of the exact pure-bending field, where w, dw/dx, dw/dy
+# are all zero) plus v at node 2 against in-plane spin: the exact solution satisfies all of these,
+# so they add no stress. All other dof are free.
+1, x, 0
+1, y, 0
+1, z, 0
+1, rx, 0
+1, ry, 0
+2, y, 0
+
+[LOADCASE default]
+# consistent nodal moments for a uniform edge moment M0 = 1000 N*m per metre of width about local y:
+# +M0*b at the x=0 edge, -M0*b at the x=a edge (b=1)
+1, ry, 500
+4, ry, 500
+2, ry, -500
+3, ry, -500
+
+[SOLVERPARAMS]
+Tolerance=1E-9
+Verbose=0

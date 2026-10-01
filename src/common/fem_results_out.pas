@@ -16,12 +16,18 @@ unit fem_results_out;
 //                          .GFX .GFY .GFZ .GMX .GMY .GMZ   same, global axes
 //                          .SIGAX .SIGMAX .SIGMIN .TAU .VM .TRESCA
 //          k = 0..BeamDivisions (0 = node 1, BeamDivisions = node 2)
+//   shell  ELEM.<id>.EX.X/.Y/.Z  EY.*  EZ.*         element axes in global coordinates
+//          ELEM.<id>.<loc>.NXX .NYY .NXY            membrane force / length
+//                         .MXX .MYY .MXY            bending moment / length
+//                         .QX .QY                   shear force / length (shellq8 only)
+//                         .TOP.<c> and .BOT.<c>     face stresses, c = SXX SYY TXY S1 S2 ANG VM TRESCA
+//          loc = C (centroid) or N1..N4 (corner nodes 1-4)
 // See fem_results.pas for the sign conventions.
 
 interface
 
 uses
-  fem_types, fem_index, fem_dofmap, fem_results, SysUtils, StrUtils, Math;
+  fem_types, fem_index, fem_dofmap, fem_matrix, fem_results, SysUtils, StrUtils, Math;
 
 procedure EmitElementResults(var OutF: Text; const CasePrefix, CaseLabel: string;
   const Model: TModel; NodeIdx, MatIdx, PropIdx: TIntIntMap;
@@ -84,6 +90,47 @@ begin
   end;
 end;
 
+procedure EmitShell(var OutF: Text; const P: string; const el: TElement;
+  const R: TShellResult; const FS: TFormatSettings);
+const
+  LocName: array[0..4] of string = ('C', 'N1', 'N2', 'N3', 'N4');
+var
+  pt, a, c: Integer;
+  B, Face: string;
+  AxName: array[0..2] of string = ('EX', 'EY', 'EZ');
+  Ax: array[0..2] of TVec3;
+  Comp: array[0..2] of string = ('X', 'Y', 'Z');
+  st: TPlaneStress;
+  face_i: Integer;
+begin
+  Ax[0] := R.Frame.ex; Ax[1] := R.Frame.ey; Ax[2] := R.Frame.ez;
+  for a := 0 to 2 do
+    for c := 0 to 2 do
+      Emit(OutF, Format('%sELEM.%d.%s.%s', [P, el.Id, AxName[a], Comp[c]]), Ax[a][c], FS);
+
+  for pt := 0 to 4 do
+    with R.Points[pt] do
+    begin
+      B := Format('%sELEM.%d.%s.', [P, el.Id, LocName[pt]]);
+      Emit(OutF, B + 'NXX', Nxx, FS); Emit(OutF, B + 'NYY', Nyy, FS); Emit(OutF, B + 'NXY', Nxy, FS);
+      Emit(OutF, B + 'MXX', Mxx, FS); Emit(OutF, B + 'MYY', Myy, FS); Emit(OutF, B + 'MXY', Mxy, FS);
+      if R.HasShear then
+      begin
+        Emit(OutF, B + 'QX', Qx, FS); Emit(OutF, B + 'QY', Qy, FS);
+      end;
+      for face_i := 0 to 1 do
+      begin
+        if face_i = 0 then begin Face := B + 'TOP.'; st := Top; end
+        else begin Face := B + 'BOT.'; st := Bot; end;
+        Emit(OutF, Face + 'SXX', st.Sxx, FS); Emit(OutF, Face + 'SYY', st.Syy, FS);
+        Emit(OutF, Face + 'TXY', st.Txy, FS);
+        Emit(OutF, Face + 'S1', st.S1, FS);   Emit(OutF, Face + 'S2', st.S2, FS);
+        Emit(OutF, Face + 'ANG', st.Angle, FS);
+        Emit(OutF, Face + 'VM', st.VonMises, FS); Emit(OutF, Face + 'TRESCA', st.Tresca, FS);
+      end;
+    end;
+end;
+
 procedure NarrateTruss(var OutF: Text; const el: TElement; const R: TTrussResult;
   const FS: TFormatSettings);
 begin
@@ -132,6 +179,71 @@ begin
         G(VonMises, FS, 12) + G(Tresca, FS, 12));
 end;
 
+procedure NarrateShell(var OutF: Text; const el: TElement; const R: TShellResult;
+  const FS: TFormatSettings);
+const
+  LocLabel: array[0..4] of string = ('centre ', 'node 1 ', 'node 2 ', 'node 3 ', 'node 4 ');
+var
+  pt, k: Integer;
+  nodeList: string;
+  st: TPlaneStress;
+  face: Integer;
+begin
+  TableScale := 0.0;
+  for pt := 0 to 4 do
+    with R.Points[pt] do
+    begin
+      TableScale := Max(TableScale, Max(Abs(Nxx), Max(Abs(Nyy), Max(Abs(Nxy), Max(Abs(Mxx), Max(Abs(Myy), Abs(Mxy)))))));
+      TableScale := Max(TableScale, Max(Abs(Top.VonMises), Abs(Bot.VonMises)));
+      TableScale := Max(TableScale, Max(Abs(Top.Tresca), Abs(Bot.Tresca)));
+      TableScale := Max(TableScale, Max(Abs(Qx), Abs(Qy)));
+    end;
+  nodeList := '';
+  for k := 0 to High(el.NodeIds) do
+  begin
+    if k > 0 then nodeList := nodeList + '-';
+    nodeList := nodeList + IntToStr(el.NodeIds[k]);
+  end;
+  WriteLn(OutF, Format('#   %s %d (nodes %s), thickness %s; element axes in global coordinates:',
+    [el.ElementType, el.Id, nodeList, Trim(G(R.Thickness, FS))]));
+  WriteLn(OutF, Format('#     x = (%s, %s, %s)   y = (%s, %s, %s)   z (normal) = (%s, %s, %s)',
+    [Trim(G(R.Frame.ex[0], FS)), Trim(G(R.Frame.ex[1], FS)), Trim(G(R.Frame.ex[2], FS)),
+     Trim(G(R.Frame.ey[0], FS)), Trim(G(R.Frame.ey[1], FS)), Trim(G(R.Frame.ey[2], FS)),
+     Trim(G(R.Frame.ez[0], FS)), Trim(G(R.Frame.ez[1], FS)), Trim(G(R.Frame.ez[2], FS))]));
+  if R.HasShear then
+  begin
+    WriteLn(OutF, '#     force and moment per unit length (element axes; N tension +):');
+    WriteLn(OutF, '#     point          Nxx         Nyy         Nxy         Mxx         Myy         Mxy          Qx          Qy');
+  end
+  else
+  begin
+    WriteLn(OutF, '#     force and moment per unit length (element axes; N tension +):');
+    WriteLn(OutF, '#     point          Nxx         Nyy         Nxy         Mxx         Myy         Mxy');
+  end;
+  for pt := 0 to 4 do
+    with R.Points[pt] do
+    begin
+      if R.HasShear then
+        WriteLn(OutF, '#     ' + LocLabel[pt] + G(Nxx, FS) + G(Nyy, FS) + G(Nxy, FS) + G(Mxx, FS) + G(Myy, FS) + G(Mxy, FS) + G(Qx, FS) + G(Qy, FS))
+      else
+        WriteLn(OutF, '#     ' + LocLabel[pt] + G(Nxx, FS) + G(Nyy, FS) + G(Nxy, FS) + G(Mxx, FS) + G(Myy, FS) + G(Mxy, FS));
+    end;
+  for face := 0 to 1 do
+  begin
+    if face = 0 then
+      WriteLn(OutF, '#     stress on the top (+z) face:')
+    else
+      WriteLn(OutF, '#     stress on the bottom (-z) face:');
+    WriteLn(OutF, '#     point          sxx         syy         txy          S1          S2   von Mises      Tresca');
+    for pt := 0 to 4 do
+    begin
+      if face = 0 then st := R.Points[pt].Top else st := R.Points[pt].Bot;
+      WriteLn(OutF, '#     ' + LocLabel[pt] + G(st.Sxx, FS) + G(st.Syy, FS) + G(st.Txy, FS) +
+        G(st.S1, FS) + G(st.S2, FS) + G(st.VonMises, FS) + G(st.Tresca, FS));
+    end;
+  end;
+end;
+
 procedure EmitElementResults(var OutF: Text; const CasePrefix, CaseLabel: string;
   const Model: TModel; NodeIdx, MatIdx, PropIdx: TIntIntMap;
   const DofMap: TDofMap; const U: TDoubleArray; const FS: TFormatSettings);
@@ -142,12 +254,15 @@ var
   Ue: TDoubleArray;
   TR: TTrussResult;
   BR: TBeamResult;
+  SR: TShellResult;
 begin
   nT := 0; nB := 0;
   for ei := 0 to High(Model.Elements) do
   begin
     if Model.Elements[ei].ElementType = 'truss' then Inc(nT)
-    else if Model.Elements[ei].ElementType = 'beam' then Inc(nB);
+    else if (Model.Elements[ei].ElementType = 'beam')
+         or (Model.Elements[ei].ElementType = 'shellq4')
+         or (Model.Elements[ei].ElementType = 'shellq8') then Inc(nB);
   end;
   if (nT + nB) = 0 then Exit;
 
@@ -161,7 +276,8 @@ begin
   for ei := 0 to High(Model.Elements) do
   begin
     el := Model.Elements[ei];
-    if (el.ElementType <> 'truss') and (el.ElementType <> 'beam') then Continue;
+    if (el.ElementType <> 'truss') and (el.ElementType <> 'beam')
+       and (el.ElementType <> 'shellq4') and (el.ElementType <> 'shellq8') then Continue;
     gd := ElementGlobalDofs(DofMap, NodeIdx, el);
     SetLength(Ue, High(gd) + 1);
     Ue[0] := 0.0;
@@ -172,6 +288,12 @@ begin
       TR := TrussResultFor(Model, NodeIdx, MatIdx, PropIdx, el, Ue);
       EmitTruss(OutF, CasePrefix, el, TR, FS);
       if Model.SolverParams.Verbose then NarrateTruss(OutF, el, TR, FS);
+    end
+    else if (el.ElementType = 'shellq4') or (el.ElementType = 'shellq8') then
+    begin
+      SR := ShellResultFor(Model, NodeIdx, MatIdx, PropIdx, el, Ue);
+      EmitShell(OutF, CasePrefix, el, SR, FS);
+      if Model.SolverParams.Verbose then NarrateShell(OutF, el, SR, FS);
     end
     else
     begin

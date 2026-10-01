@@ -148,8 +148,8 @@ get only the terse machine-readable output.
 ## Element forces and stresses
 
 After each load case and combination, `linstatic` and `linsparse` recover
-the forces inside every truss and beam from the solved displacements and
-print them as `ELEM.<id>.…` lines (plus a readable table when
+the forces inside every truss, beam and shell from the solved
+displacements and print them as `ELEM.<id>.…` lines (plus a readable table when
 `Verbose=1`). Combinations are recovered from the *combined*
 displacements, so stresses and von Mises/Tresca are computed from the
 combined state, not by combining the individual cases' von Mises values.
@@ -157,6 +157,7 @@ combined state, not by combining the individual cases' von Mises values.
 | Element | Keys (all within the case's normal key prefix) |
 |---|---|
 | truss | `ELEM.<id>.N` (tension +), `.SIGMA`, `.VM`, `.TRESCA` |
+| shellq4, shellq8 | `ELEM.<id>.EX.X/.Y/.Z`, `EY.*`, `EZ.*` (the element's axes in global coordinates); then for each location `<loc>` = `C` (centroid) or `N1`…`N4` (corner nodes 1–4): `ELEM.<id>.<loc>.` + `NXX NYY NXY` (membrane force per unit length), `MXX MYY MXY` (bending moment per unit length), `QX QY` (transverse shear force per unit length, **shellq8 only**), and `TOP.` / `BOT.` + `SXX SYY TXY S1 S2 ANG VM TRESCA` (face stresses) |
 | beam | `ELEM.<id>.S<k>.` then `POS` (distance from node 1); `N`, `VY`, `VZ`, `T`, `MY`, `MZ` (member-local axes); `GFX`, `GFY`, `GFZ`, `GMX`, `GMY`, `GMZ` (same resultants on global axes); `SIGAX`, `SIGMAX`, `SIGMIN`, `TAU`, `VM`, `TRESCA` — `k` runs `0` (node 1) to `BeamDivisions` (node 2) |
 
 **Sign convention.** Beam resultants are the forces on the section's
@@ -187,6 +188,39 @@ Without `Cy`/`Cz` the stresses are axial only (`N/A`); without `Rt` there
 is no torsional shear. Von Mises is `√(σ² + 3τ²)` and Tresca `√(σ² + 4τ²)`.
 Transverse (flexural) shear stress is not included — it depends on the
 section shape, which is not described here.
+
+### Shell results
+
+Shell results are in the element's own axes: **x** along the edge from
+node 1 to node 2, **z** the normal given by the right-hand rule on nodes
+1-2-4 (so a counter-clockwise numbering seen from +z has its normal toward
+the viewer), **y** completing the set. The axes are printed (`EX`, `EY`,
+`EZ`) so anything can be resolved on global axes. Reverse the node order
+and `z` flips, which swaps which face is called top and which bottom (the
+physics does not change).
+
+- `Nxx Nyy Nxy` — membrane force per unit length, tension positive.
+- `Mxx Myy Mxy` — bending moment per unit length. A positive `Mxx` is
+  "sagging": it puts the **bottom** (−z) face of the x–z section in
+  tension, exactly as a beam bending in that plane would.
+- `Qx Qy` — transverse shear force per unit length. Only `shellq8`
+  (shear-deformable) has a shear strain; the thin-plate `shellq4` does not
+  report these. For a smoothly-varying field they are small and noisy at
+  the corner nodes (they come from a reduced-integration formulation), so
+  read them at the centroid.
+- `TOP` is the +z face, `BOT` the −z face. Plane stress,
+  `σ = N/t ∓ 6M/t²` (top −, bottom +), then `S1 ≥ S2` principal stresses,
+  `ANG` (angle of the S1 direction from the element x axis, radians),
+  `VM` von Mises `√(sxx² − sxx·syy + syy² + 3·txy²)` and `TRESCA`
+  `max(|S1|, |S2|, |S1 − S2|)` (the third principal stress is zero).
+  Transverse shear stress is not included in either criterion.
+
+Values are sampled at the element centroid and at the four corner nodes,
+directly from that element's own displacement field. They are **not
+averaged** with neighbouring elements, so on a coarse mesh expect a jump
+in stress from one element to the next, and expect the corner values to be
+less accurate than the centroid for a bilinear element. Refine the mesh
+until neighbouring elements agree.
 
 ## Results file
 

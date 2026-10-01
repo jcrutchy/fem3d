@@ -43,12 +43,12 @@ third-party dependencies — only the FPC standard RTL (`fpjson`,
     available with `-dFEM_USE_ASM` (x86-64 Linux/Win64). Verified by
     `src/tools/matrix_test`.
   - `fem_results.pas` / `fem_results_out.pas` — element force and stress
-    recovery (truss axial force; beam shear/moment/torque at
+    recovery (truss axial force; shell membrane/bending/face stresses; beam shear/moment/torque at
     `BeamDivisions` stations, in local and global axes, with extreme-fibre
     stress, von Mises and Tresca) and the shared writer that `linstatic`
     and `linsparse` both use to print it. See "Element forces and stresses"
     in `docs/native_format.md`. Checked by regression cases 020–024 and
-    `src/tools/results_test`.
+    `src/tools/results_test` and `src/tools/shell_results_test`.
   - `fem_elements.pas` — element stiffness formulations: the 3D 2-node
     space-truss (axial bar) and the 3D 2-node Euler-Bernoulli beam
     (axial + biaxial bending + torsion). Both return a generic dynamically-
@@ -275,6 +275,28 @@ independently cross-checked one). Every tutorial's model is a real
       quads (concave / bow-tie / degenerate corners rejected as model
       errors), `PivotTolerance` solver parameter, typed constants
       untyped, duplicate test file removed.
+- [x] Shared matrix/vector library `fem_matrix` (block-structured element
+      transforms, B^T·D·B accumulation, small inverses, dense helpers, an
+      optional SSE2 kernel behind `-dFEM_USE_ASM`); the per-element inline
+      copies were removed. Verified by `src/tools/matrix_test` and a
+      differential test against the previous element code (stiffness
+      matrices agree to ~6e-16).
+- [x] Element forces and stresses: truss axial force/stress; beam
+      N/Vy/Vz/T/My/Mz at `BeamDivisions` stations in local and global axes,
+      with extreme-fibre stress, von Mises and Tresca; shellq4/shellq8
+      membrane forces, bending moments, (shellq8) shear forces, and
+      top/bottom face stresses with principal values, von Mises and
+      Tresca. Regression cases 020-031, plus `results_test` and
+      `shell_results_test`. See `docs/native_format.md`.
+- [ ] Results viewer GUI (deformed shape, element force diagrams, stress
+      contours). Undecided between a Lazarus executable and a web app
+      (single-file HTML/JS, in keeping with the zero-dependency approach);
+      to be worked out. Needs a stable machine-readable results format
+      to read — the `DISP.*` / `REACT.*` / `ELEM.*` key=value output is the
+      natural starting point.
+- [ ] Shell stress averaging across elements (nodal smoothing) and
+      Gauss-point output, if the unaveraged centroid/corner values prove
+      too coarse in practice
 - [ ] Adaptors for other ASCII formats (Strand7 `.txt` first candidate;
       see `docs/adaptors.md` — low priority for now, not started)
 - [ ] Rotary inertia for beam elements, so `modal` can handle a beam's

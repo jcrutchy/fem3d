@@ -39,6 +39,44 @@ function TrussStiffness3D(E, A, x1, y1, z1, x2, y2, z2: Double): TElemMatrix;
 // parallel to the beam axis) used to fix the beam's roll about its own
 // axis -- pass a zero vector to use the default heuristic (global Z,
 // falling back to global X for near-vertical members).
+// ---------------------------------------------------------------------------
+// Strain-displacement (B) matrix builders. The stiffness routines and the
+// stress-recovery code (fem_results) both call these, so the strains used to
+// recover stress are by construction the same strains the stiffness was built
+// from. All B outputs are row-major 0-based flat arrays written through a
+// pointer (pass @B[1,1] of a row-major Pascal static array).
+// ---------------------------------------------------------------------------
+type
+  TQuadCoords = array[1..8] of Double;
+  TDKQOps = array[1..4, 1..2, 1..12] of Double;
+
+// Plane-stress membrane B (3 x 2*NN: rows exx, eyy, gxy; columns u1,v1,u2,v2,...)
+// at a point whose shape-function derivatives are given (0-based open arrays of
+// NN values). lx/ly are the node coordinates in the element plane. detJ is the
+// Jacobian determinant; non-positive raises Exception(ElemLabel + ' has ...').
+procedure MembraneBAt(NN: Integer; const dNdXi, dNdEta, lx, ly: array of Double;
+  const ElemLabel: string; B: PDouble; out detJ: Double);
+
+// Q8 Mindlin plate B at a point: Bb (3 x 24: curvatures kx, ky, kxy(engineering))
+// and/or Bs (2 x 24: shear strains gxz, gyz); either pointer may be nil.
+// Columns are [w, rx, ry] per node, 8 nodes.
+procedure MindlinBAt(const sf: TQuad8ShapeFuncs; const lx, ly: array of Double;
+  Bb, Bs: PDouble; out detJ: Double);
+
+// DKQ (4-node discrete-Kirchhoff) plate bending: the geometry-only edge
+// operators, then B (3 x 12: kx, ky, kxy(engineering); columns [w, w_x, w_y]
+// per node) at a natural-coordinate point.
+procedure DKQOperators(const px, py: array of Double; out Op: TDKQOps);
+procedure DKQBAt(const Op: TDKQOps; const px, py: array of Double;
+  Xi, Eta: Double; B: PDouble; out detJ: Double);
+
+// Shell element's own plane: the local frame (ex along node 1->2, ez the
+// normal, from corner nodes 1, 2, 4) and every node's in-plane coordinates
+// (node 1 at the origin). NN = 4 or 8; P = the nodes' global positions.
+procedure QuadLocalGeometry(NN: Integer; const P: array of TVec3;
+  const MsgZeroEdge, MsgDegenerate: string;
+  out F: TFrame3; out Lx, Ly: TQuadCoords);
+
 // Beam local frame (ex along the member, ey/ez the section axes) and
 // length, from the two end nodes and an optional orientation reference
 // vector (all-zero = use the default heuristic). Shared by the stiffness
@@ -390,6 +428,215 @@ begin
   Result := TransformBlockDiag(BeamLocalStiffness(E, G, A, Iy, Iz, J, L), F, 3, 4);
 end;
 
+procedure MembraneBAt(NN: Integer; const dNdXi, dNdEta, lx, ly: array of Double;
+  const ElemLabel: string; B: PDouble; out detJ: Double);
+var
+  i, ncol: Integer;
+  J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22, dx, dy: Double;
+begin
+  J11 := 0; J12 := 0; J21 := 0; J22 := 0;
+  for i := 0 to NN - 1 do
+  begin
+    J11 := J11 + dNdXi[i]  * lx[i];
+    J12 := J12 + dNdXi[i]  * ly[i];
+    J21 := J21 + dNdEta[i] * lx[i];
+    J22 := J22 + dNdEta[i] * ly[i];
+  end;
+  detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
+  if detJ <= 0 then
+    raise Exception.Create(ElemLabel + ' has non-positive Jacobian determinant (inverted or degenerate shape)');
+
+  ncol := 2 * NN;
+  FillChar(B^, 3 * ncol * SizeOf(Double), 0);
+  for i := 0 to NN - 1 do
+  begin
+    dx := invJ11 * dNdXi[i] + invJ12 * dNdEta[i];
+    dy := invJ21 * dNdXi[i] + invJ22 * dNdEta[i];
+    B[2 * i]                  := dx;  // exx  <- u_i
+    B[ncol + 2 * i + 1]       := dy;  // eyy  <- v_i
+    B[2 * ncol + 2 * i]       := dy;  // gxy  <- u_i
+    B[2 * ncol + 2 * i + 1]   := dx;  // gxy  <- v_i
+  end;
+end;
+
+procedure MindlinBAt(const sf: TQuad8ShapeFuncs; const lx, ly: array of Double;
+  Bb, Bs: PDouble; out detJ: Double);
+var
+  i: Integer;
+  J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22, dx, dy: Double;
+begin
+  J11 := 0; J12 := 0; J21 := 0; J22 := 0;
+  for i := 1 to 8 do
+  begin
+    J11 := J11 + sf.dNdXi[i]  * lx[i - 1];
+    J12 := J12 + sf.dNdXi[i]  * ly[i - 1];
+    J21 := J21 + sf.dNdEta[i] * lx[i - 1];
+    J22 := J22 + sf.dNdEta[i] * ly[i - 1];
+  end;
+  detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
+  if detJ <= 0 then
+    raise Exception.Create('Q8 Mindlin plate element has non-positive Jacobian determinant (inverted or degenerate shape)');
+
+  if Bb <> nil then FillChar(Bb^, 3 * 24 * SizeOf(Double), 0);
+  if Bs <> nil then FillChar(Bs^, 2 * 24 * SizeOf(Double), 0);
+  for i := 1 to 8 do
+  begin
+    dx := invJ11 * sf.dNdXi[i] + invJ12 * sf.dNdEta[i];
+    dy := invJ21 * sf.dNdXi[i] + invJ22 * sf.dNdEta[i];
+    if Bb <> nil then
+    begin
+      // kappa_x = -d(ry)/dx;  kappa_y = d(rx)/dy;  kappa_xy = d(rx)/dx - d(ry)/dy
+      Bb[0 * 24 + 3 * (i - 1) + 2] := -dx;
+      Bb[1 * 24 + 3 * (i - 1) + 1] :=  dy;
+      Bb[2 * 24 + 3 * (i - 1) + 1] :=  dx;
+      Bb[2 * 24 + 3 * (i - 1) + 2] := -dy;
+    end;
+    if Bs <> nil then
+    begin
+      // gamma_xz = dw/dx + ry;  gamma_yz = dw/dy - rx
+      Bs[0 * 24 + 3 * (i - 1)]     := dx;
+      Bs[0 * 24 + 3 * (i - 1) + 2] := sf.N[i];
+      Bs[1 * 24 + 3 * (i - 1)]     := dy;
+      Bs[1 * 24 + 3 * (i - 1) + 1] := -sf.N[i];
+    end;
+  end;
+end;
+
+procedure DKQOperators(const px, py: array of Double; out Op: TDKQOps);
+var
+  edgeStart, edgeEnd: array[1..4] of Integer;
+  eg, i, nodeIdx, col: Integer;
+  ex, tangent, normal: array[0..1] of Double;
+  edgeLen: Double;
+begin
+  // Edge midpoint discrete-Kirchhoff operators: Op[eg][1,col] and Op[eg][2,col]
+  // give the physical-x and physical-y components of the constrained
+  // gradient(w) at edge eg's midpoint, as linear functions of the 12 local
+  // corner dof. Geometry-only: independent of any evaluation point.
+  edgeStart[1] := 1; edgeEnd[1] := 2;
+  edgeStart[2] := 2; edgeEnd[2] := 3;
+  edgeStart[3] := 3; edgeEnd[3] := 4;
+  edgeStart[4] := 4; edgeEnd[4] := 1;
+
+  for eg := 1 to 4 do
+  begin
+    ex[0] := px[edgeEnd[eg] - 1] - px[edgeStart[eg] - 1];
+    ex[1] := py[edgeEnd[eg] - 1] - py[edgeStart[eg] - 1];
+    edgeLen := Sqrt(ex[0]*ex[0] + ex[1]*ex[1]);
+    if edgeLen <= 0 then
+      raise Exception.Create('DKQ plate element has a zero-length edge (coincident nodes)');
+    tangent[0] := ex[0] / edgeLen; tangent[1] := ex[1] / edgeLen;
+    normal[0] := -tangent[1];      normal[1] := tangent[0];
+
+    for i := 1 to 2 do
+      for col := 1 to 12 do
+        Op[eg, i, col] := 0;
+
+    // g_s(mid) = 3(w_end-w_start)/(2L) - (g_s(start)+g_s(end))/4
+    // g_n(mid) = (g_n(start)+g_n(end))/2
+    // grad(w)(mid) = tangent*g_s(mid) + normal*g_n(mid)
+    Op[eg, 1, 3*(edgeStart[eg]-1)+1] := Op[eg, 1, 3*(edgeStart[eg]-1)+1] - 1.5*tangent[0]/edgeLen;
+    Op[eg, 2, 3*(edgeStart[eg]-1)+1] := Op[eg, 2, 3*(edgeStart[eg]-1)+1] - 1.5*tangent[1]/edgeLen;
+    Op[eg, 1, 3*(edgeEnd[eg]-1)+1]   := Op[eg, 1, 3*(edgeEnd[eg]-1)+1]   + 1.5*tangent[0]/edgeLen;
+    Op[eg, 2, 3*(edgeEnd[eg]-1)+1]   := Op[eg, 2, 3*(edgeEnd[eg]-1)+1]   + 1.5*tangent[1]/edgeLen;
+
+    for i := 1 to 2 do
+    begin
+      if i = 1 then nodeIdx := edgeStart[eg] else nodeIdx := edgeEnd[eg];
+      // theta_x-like dof (w_x, local column offset +2)
+      Op[eg, 1, 3*(nodeIdx-1)+2] := Op[eg, 1, 3*(nodeIdx-1)+2]
+        - 0.25*tangent[0]*tangent[0] + 0.5*normal[0]*normal[0];
+      Op[eg, 2, 3*(nodeIdx-1)+2] := Op[eg, 2, 3*(nodeIdx-1)+2]
+        - 0.25*tangent[1]*tangent[0] + 0.5*normal[1]*normal[0];
+      // theta_y-like dof (w_y, local column offset +3)
+      Op[eg, 1, 3*(nodeIdx-1)+3] := Op[eg, 1, 3*(nodeIdx-1)+3]
+        - 0.25*tangent[0]*tangent[1] + 0.5*normal[0]*normal[1];
+      Op[eg, 2, 3*(nodeIdx-1)+3] := Op[eg, 2, 3*(nodeIdx-1)+3]
+        - 0.25*tangent[1]*tangent[1] + 0.5*normal[1]*normal[1];
+    end;
+  end;
+end;
+
+procedure DKQBAt(const Op: TDKQOps; const px, py: array of Double;
+  Xi, Eta: Double; B: PDouble; out detJ: Double);
+var
+  sf4: TQuadShapeFuncs;
+  sf8: TQuad8ShapeFuncs;
+  i, eg, col: Integer;
+  J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22: Double;
+  NatGradWx, NatGradWy: array[1..12, 1..2] of Double; // [.,1]=d/dxi [.,2]=d/deta
+  PhysWx_x, PhysWx_y, PhysWy_x, PhysWy_y: Double;
+begin
+  sf4 := QuadShapeFuncsAt(Xi, Eta);
+  sf8 := Quad8ShapeFuncsAt(Xi, Eta);
+
+  J11 := 0; J12 := 0; J21 := 0; J22 := 0;
+  for i := 1 to 4 do
+  begin
+    J11 := J11 + sf4.dNdXi[i]  * px[i - 1];
+    J12 := J12 + sf4.dNdXi[i]  * py[i - 1];
+    J21 := J21 + sf4.dNdEta[i] * px[i - 1];
+    J22 := J22 + sf4.dNdEta[i] * py[i - 1];
+  end;
+  detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
+  if detJ <= 0 then
+    raise Exception.Create('DKQ plate element has non-positive Jacobian determinant (inverted or degenerate shape)');
+
+  for col := 1 to 12 do
+  begin
+    NatGradWx[col, 1] := 0; NatGradWx[col, 2] := 0;
+    NatGradWy[col, 1] := 0; NatGradWy[col, 2] := 0;
+  end;
+
+  // corner contribution: w_x field directly carries node i's w_x dof
+  // (weighted by the Q8 corner shape function), likewise w_y.
+  for i := 1 to 4 do
+  begin
+    col := 3*(i-1) + 2; // w_x dof of node i
+    NatGradWx[col, 1] := NatGradWx[col, 1] + sf8.dNdXi[i];
+    NatGradWx[col, 2] := NatGradWx[col, 2] + sf8.dNdEta[i];
+    col := 3*(i-1) + 3; // w_y dof of node i
+    NatGradWy[col, 1] := NatGradWy[col, 1] + sf8.dNdXi[i];
+    NatGradWy[col, 2] := NatGradWy[col, 2] + sf8.dNdEta[i];
+  end;
+
+  // midpoint contribution: each edge's constrained gradient(w),
+  // weighted by that midpoint's Q8 shape function.
+  for eg := 1 to 4 do
+    for col := 1 to 12 do
+    begin
+      NatGradWx[col, 1] := NatGradWx[col, 1] + sf8.dNdXi[4+eg]  * Op[eg, 1, col];
+      NatGradWx[col, 2] := NatGradWx[col, 2] + sf8.dNdEta[4+eg] * Op[eg, 1, col];
+      NatGradWy[col, 1] := NatGradWy[col, 1] + sf8.dNdXi[4+eg]  * Op[eg, 2, col];
+      NatGradWy[col, 2] := NatGradWy[col, 2] + sf8.dNdEta[4+eg] * Op[eg, 2, col];
+    end;
+
+  for col := 1 to 12 do
+  begin
+    PhysWx_x := invJ11*NatGradWx[col,1] + invJ12*NatGradWx[col,2]; // d(w,x)/dx
+    PhysWx_y := invJ21*NatGradWx[col,1] + invJ22*NatGradWx[col,2]; // d(w,x)/dy
+    PhysWy_x := invJ11*NatGradWy[col,1] + invJ12*NatGradWy[col,2]; // d(w,y)/dx
+    PhysWy_y := invJ21*NatGradWy[col,1] + invJ22*NatGradWy[col,2]; // d(w,y)/dy
+    B[0 * 12 + col - 1] := PhysWx_x;              // kappa_xx = d(w,x)/dx
+    B[1 * 12 + col - 1] := PhysWy_y;              // kappa_yy = d(w,y)/dy
+    B[2 * 12 + col - 1] := PhysWx_y + PhysWy_x;   // 2*kappa_xy
+  end;
+end;
+
+procedure QuadLocalGeometry(NN: Integer; const P: array of TVec3;
+  const MsgZeroEdge, MsgDegenerate: string;
+  out F: TFrame3; out Lx, Ly: TQuadCoords);
+var
+  i: Integer;
+begin
+  FillChar(Lx, SizeOf(Lx), 0);
+  FillChar(Ly, SizeOf(Ly), 0);
+  F := QuadFrame(P[0], P[1], P[3], MsgZeroEdge, MsgDegenerate);
+  // Project all nodes into the local (x,y) plane; node 1 is the origin.
+  for i := 2 to NN do
+    ProjectToFrame(F, P[0], P[i - 1], Lx[i], Ly[i]);
+end;
+
 function QuadMembraneStiffnessLocal(E, Nu, Thickness: Double;
   x1, y1, x2, y2, x3, y3, x4, y4: Double): TElemMatrix;
 var
@@ -397,9 +644,8 @@ var
   D: array[1..3, 1..3] of Double;
   gp: TGaussPointArray;
   sf: TQuadShapeFuncs;
-  g, i, jc, k: Integer;
-  J11, J12, J21, J22, detJ, invJ11, invJ12, invJ21, invJ22: Double;
-  dNdx, dNdy: array[1..4] of Double;
+  g, i, jc: Integer;
+  detJ: Double;
   B: array[1..3, 1..8] of Double;
   cE: Double;
 begin
@@ -423,36 +669,7 @@ begin
   for g := 0 to NGaussPlate - 1 do
   begin
     sf := QuadShapeFuncsAt(gp[g].Xi, gp[g].Eta);
-
-    J11 := 0; J12 := 0; J21 := 0; J22 := 0;
-    for i := 1 to 4 do
-    begin
-      J11 := J11 + sf.dNdXi[i]  * lx[i];
-      J12 := J12 + sf.dNdXi[i]  * ly[i];
-      J21 := J21 + sf.dNdEta[i] * lx[i];
-      J22 := J22 + sf.dNdEta[i] * ly[i];
-    end;
-    detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
-    if detJ <= 0 then
-      raise Exception.Create('Quad membrane element has non-positive Jacobian determinant (inverted or degenerate shape)');
-
-    for i := 1 to 4 do
-    begin
-      dNdx[i] := invJ11 * sf.dNdXi[i] + invJ12 * sf.dNdEta[i];
-      dNdy[i] := invJ21 * sf.dNdXi[i] + invJ22 * sf.dNdEta[i];
-    end;
-
-    for i := 1 to 3 do
-      for jc := 1 to 8 do
-        B[i, jc] := 0;
-    for i := 1 to 4 do
-    begin
-      B[1, 2*i - 1] := dNdx[i];
-      B[2, 2*i]     := dNdy[i];
-      B[3, 2*i - 1] := dNdy[i];
-      B[3, 2*i]     := dNdx[i];
-    end;
-
+    MembraneBAt(4, sf.dNdXi, sf.dNdEta, lx, ly, 'Quad membrane element', @B[1, 1], detJ);
     // Result += B^T * D * B * thickness * detJ * weight
     AccumBtDB(Result, B, D, 3, 8, Thickness * detJ * gp[g].Weight);
   end;
@@ -466,11 +683,10 @@ var
   D: array[1..3, 1..3] of Double;
   gp: TGaussPointArray9;
   sf: TQuad8ShapeFuncs;
-  g, i, jc, k: Integer;
-  J11, J12, J21, J22, detJ, invJ11, invJ12, invJ21, invJ22: Double;
-  dNdx, dNdy: array[1..8] of Double;
+  g, i, jc: Integer;
+  detJ: Double;
   B: array[1..3, 1..16] of Double;
-  acc, cE: Double;
+  cE: Double;
 begin
   lx[1] := x1; ly[1] := y1;
   lx[2] := x2; ly[2] := y2;
@@ -496,36 +712,7 @@ begin
   for g := 0 to NGaussPlateQ8 - 1 do
   begin
     sf := Quad8ShapeFuncsAt(gp[g].Xi, gp[g].Eta);
-
-    J11 := 0; J12 := 0; J21 := 0; J22 := 0;
-    for i := 1 to 8 do
-    begin
-      J11 := J11 + sf.dNdXi[i]  * lx[i];
-      J12 := J12 + sf.dNdXi[i]  * ly[i];
-      J21 := J21 + sf.dNdEta[i] * lx[i];
-      J22 := J22 + sf.dNdEta[i] * ly[i];
-    end;
-    detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
-    if detJ <= 0 then
-      raise Exception.Create('Q8 quad membrane element has non-positive Jacobian determinant (inverted or degenerate shape)');
-
-    for i := 1 to 8 do
-    begin
-      dNdx[i] := invJ11 * sf.dNdXi[i] + invJ12 * sf.dNdEta[i];
-      dNdy[i] := invJ21 * sf.dNdXi[i] + invJ22 * sf.dNdEta[i];
-    end;
-
-    for i := 1 to 3 do
-      for jc := 1 to 16 do
-        B[i, jc] := 0;
-    for i := 1 to 8 do
-    begin
-      B[1, 2*i - 1] := dNdx[i];
-      B[2, 2*i]     := dNdy[i];
-      B[3, 2*i - 1] := dNdy[i];
-      B[3, 2*i]     := dNdx[i];
-    end;
-
+    MembraneBAt(8, sf.dNdXi, sf.dNdEta, lx, ly, 'Q8 quad membrane element', @B[1, 1], detJ);
     // Result += B^T * D * B * thickness * detJ * weight
     AccumBtDB(Result, B, D, 3, 16, Thickness * detJ * gp[g].Weight);
   end;
@@ -542,9 +729,8 @@ var
   gp3: TGaussPointArray9;
   gp2: TGaussPointArray;
   sf: TQuad8ShapeFuncs;
-  g, i, jc, k: Integer;
-  J11, J12, J21, J22, detJ, invJ11, invJ12, invJ21, invJ22: Double;
-  dNdx, dNdy: array[1..8] of Double;
+  g, i, jc: Integer;
+  detJ: Double;
   Bb: array[1..3, 1..24] of Double;
   Bs: array[1..2, 1..24] of Double;
   Ds: array[1..2, 1..2] of Double; // k*G*t*I(2x2)
@@ -578,39 +764,7 @@ begin
   for g := 0 to NGaussPlateQ8 - 1 do
   begin
     sf := Quad8ShapeFuncsAt(gp3[g].Xi, gp3[g].Eta);
-
-    J11 := 0; J12 := 0; J21 := 0; J22 := 0;
-    for i := 1 to 8 do
-    begin
-      J11 := J11 + sf.dNdXi[i]  * lx[i];
-      J12 := J12 + sf.dNdXi[i]  * ly[i];
-      J21 := J21 + sf.dNdEta[i] * lx[i];
-      J22 := J22 + sf.dNdEta[i] * ly[i];
-    end;
-    detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
-    if detJ <= 0 then
-      raise Exception.Create('Q8 Mindlin plate element has non-positive Jacobian determinant (inverted or degenerate shape)');
-
-    for i := 1 to 8 do
-    begin
-      dNdx[i] := invJ11 * sf.dNdXi[i] + invJ12 * sf.dNdEta[i];
-      dNdy[i] := invJ21 * sf.dNdXi[i] + invJ22 * sf.dNdEta[i];
-    end;
-
-    for i := 1 to 3 do
-      for jc := 1 to 24 do
-        Bb[i, jc] := 0;
-    for i := 1 to 8 do
-    begin
-      // kappa_x = -d(ry)/dx  -> row 1, ry dof (col 3i)
-      Bb[1, 3*i]     := -dNdx[i];
-      // kappa_y = d(rx)/dy   -> row 2, rx dof (col 3i-1)
-      Bb[2, 3*i - 1] :=  dNdy[i];
-      // kappa_xy = d(rx)/dx - d(ry)/dy -> row 3, both rx and ry dof
-      Bb[3, 3*i - 1] :=  dNdx[i];
-      Bb[3, 3*i]     := -dNdy[i];
-    end;
-
+    MindlinBAt(sf, lx, ly, @Bb[1, 1], nil, detJ);
     AccumBtDB(Result, Bb, Db, 3, 24, detJ * gp3[g].Weight);
   end;
 
@@ -619,38 +773,7 @@ begin
   for g := 0 to NGaussPlate - 1 do
   begin
     sf := Quad8ShapeFuncsAt(gp2[g].Xi, gp2[g].Eta);
-
-    J11 := 0; J12 := 0; J21 := 0; J22 := 0;
-    for i := 1 to 8 do
-    begin
-      J11 := J11 + sf.dNdXi[i]  * lx[i];
-      J12 := J12 + sf.dNdXi[i]  * ly[i];
-      J21 := J21 + sf.dNdEta[i] * lx[i];
-      J22 := J22 + sf.dNdEta[i] * ly[i];
-    end;
-    detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
-    if detJ <= 0 then
-      raise Exception.Create('Q8 Mindlin plate element has non-positive Jacobian determinant (inverted or degenerate shape)');
-
-    for i := 1 to 8 do
-    begin
-      dNdx[i] := invJ11 * sf.dNdXi[i] + invJ12 * sf.dNdEta[i];
-      dNdy[i] := invJ21 * sf.dNdXi[i] + invJ22 * sf.dNdEta[i];
-    end;
-
-    for i := 1 to 2 do
-      for jc := 1 to 24 do
-        Bs[i, jc] := 0;
-    for i := 1 to 8 do
-    begin
-      // gamma_xz = d(w)/dx + ry   -> row 1, w dof (col 3i-2) and ry dof (col 3i)
-      Bs[1, 3*i - 2] := dNdx[i];
-      Bs[1, 3*i]     := sf.N[i];
-      // gamma_yz = d(w)/dy - rx  -> row 2, w dof (col 3i-2) and rx dof (col 3i-1)
-      Bs[2, 3*i - 2] := dNdy[i];
-      Bs[2, 3*i - 1] := -sf.N[i];
-    end;
-
+    MindlinBAt(sf, lx, ly, nil, @Bs[1, 1], detJ);
     // Ds = DsDiag * I(2x2)
     AccumBtDB(Result, Bs, Ds, 2, 24, detJ * gp2[g].Weight);
   end;
@@ -721,8 +844,7 @@ function QuadShellStiffnessQ8_3D(E, Nu, Thickness, ShearCorrectionFactor, DrillF
 var
   F: TFrame3;
   p: array[1..8] of TVec3;
-  lx, ly: array[1..8] of Double;
-  i: Integer;
+  lx, ly: TQuadCoords;
 begin
   p[1] := Vec3(x1, y1, z1); p[2] := Vec3(x2, y2, z2);
   p[3] := Vec3(x3, y3, z3); p[4] := Vec3(x4, y4, z4);
@@ -732,13 +854,10 @@ begin
   // Same local-basis construction as QuadShellStiffness3D -- from the
   // CORNER nodes only (1, 2, 4); midside nodes 5-8 are projected into that
   // same plane, not used to define it.
-  F := QuadFrame(p[1], p[2], p[4],
+  QuadLocalGeometry(8, p,
     'Q8 quad shell element has a zero-length 1-2 edge (coincident nodes)',
-    'Q8 quad shell element is degenerate (corner nodes 1, 2, 4 are collinear)');
-
-  lx[1] := 0; ly[1] := 0;
-  for i := 2 to 8 do
-    ProjectToFrame(F, p[1], p[i], lx[i], ly[i]);
+    'Q8 quad shell element is degenerate (corner nodes 1, 2, 4 are collinear)',
+    F, lx, ly);
 
   // Same per-node [[Lam,0],[0,Lam]] pattern as QuadShellStiffness3D,
   // repeated for 8 nodes: 16 blocks.
@@ -754,22 +873,17 @@ function QuadMembraneStiffness3D(E, Nu, Thickness: Double;
 var
   F: TFrame3;
   p: array[1..4] of TVec3;
-  lx, ly: array[1..4] of Double; // node local in-plane coords
-  i: Integer;
+  lx, ly: TQuadCoords;
 begin
   p[1] := Vec3(x1, y1, z1); p[2] := Vec3(x2, y2, z2);
   p[3] := Vec3(x3, y3, z3); p[4] := Vec3(x4, y4, z4);
 
   // Local in-plane basis: ex along edge 1->2, ez the element normal (from
   // the two edges off node 1), ey completing a right-handed set.
-  F := QuadFrame(p[1], p[2], p[4],
+  QuadLocalGeometry(4, p,
     'Quad membrane element has a zero-length 1-2 edge (coincident nodes)',
-    'Quad membrane element is degenerate (nodes 1, 2, 4 are collinear)');
-
-  // Project all 4 nodes into the local (x,y) plane; node 1 is the origin.
-  lx[1] := 0; ly[1] := 0;
-  for i := 2 to 4 do
-    ProjectToFrame(F, p[1], p[i], lx[i], ly[i]);
+    'Quad membrane element is degenerate (nodes 1, 2, 4 are collinear)',
+    F, lx, ly);
 
   // T maps global (x,y,z)*4 -> local (u,v)*4: 4 blocks of the 2x3 in-plane
   // rows of Lam.
@@ -783,76 +897,20 @@ function QuadBendingStiffnessLocal(E, Nu, Thickness: Double;
   x1, y1, x2, y2, x3, y3, x4, y4: Double): TElemMatrix;
 var
   px, py: array[1..4] of Double;
-  // Edge midpoint discrete-Kirchhoff operators: Op[eg][1,col] and
-  // Op[eg][2,col] give the physical-x and physical-y components of the
-  // constrained gradient(w) at edge eg's midpoint, as linear functions
-  // of the 12 local corner dof.
-  Op: array[1..4, 1..2, 1..12] of Double;
-  edgeStart, edgeEnd: array[1..4] of Integer;
-  eg, i, nodeIdx, col, g: Integer;
-  ex, tangent, normal: array[0..1] of Double;
-  edgeLen: Double;
-  sf4: TQuadShapeFuncs;
-  sf8: TQuad8ShapeFuncs;
+  Op: TDKQOps;
   gp: TGaussPointArray;
-  J11, J12, J21, J22, detJ, invJ11, invJ12, invJ21, invJ22: Double;
-  NatGradWx, NatGradWy: array[1..12, 1..2] of Double; // [.,1]=d/dxi [.,2]=d/deta
-  PhysWx_x, PhysWx_y, PhysWy_x, PhysWy_y: array[1..12] of Double;
+  g, i, jc: Integer;
+  detJ: Double;
   B: array[1..3, 1..12] of Double;
   Dfac: Double;
   D: array[1..3, 1..3] of Double;
-  acc: Double;
-  jc, k: Integer;
 begin
   px[1] := x1; py[1] := y1;
   px[2] := x2; py[2] := y2;
   px[3] := x3; py[3] := y3;
   px[4] := x4; py[4] := y4;
 
-  // --- build the 4 discrete-Kirchhoff edge operators (geometry-only,
-  // independent of the Gauss point) ---
-  edgeStart[1] := 1; edgeEnd[1] := 2;
-  edgeStart[2] := 2; edgeEnd[2] := 3;
-  edgeStart[3] := 3; edgeEnd[3] := 4;
-  edgeStart[4] := 4; edgeEnd[4] := 1;
-
-  for eg := 1 to 4 do
-  begin
-    ex[0] := px[edgeEnd[eg]] - px[edgeStart[eg]];
-    ex[1] := py[edgeEnd[eg]] - py[edgeStart[eg]];
-    edgeLen := Sqrt(ex[0]*ex[0] + ex[1]*ex[1]);
-    if edgeLen <= 0 then
-      raise Exception.Create('DKQ plate element has a zero-length edge (coincident nodes)');
-    tangent[0] := ex[0] / edgeLen; tangent[1] := ex[1] / edgeLen;
-    normal[0] := -tangent[1];      normal[1] := tangent[0];
-
-    for i := 1 to 2 do
-      for col := 1 to 12 do
-        Op[eg, i, col] := 0;
-
-    // g_s(mid) = 3(w_end-w_start)/(2L) - (g_s(start)+g_s(end))/4
-    // g_n(mid) = (g_n(start)+g_n(end))/2
-    // grad(w)(mid) = tangent*g_s(mid) + normal*g_n(mid)
-    Op[eg, 1, 3*(edgeStart[eg]-1)+1] := Op[eg, 1, 3*(edgeStart[eg]-1)+1] - 1.5*tangent[0]/edgeLen;
-    Op[eg, 2, 3*(edgeStart[eg]-1)+1] := Op[eg, 2, 3*(edgeStart[eg]-1)+1] - 1.5*tangent[1]/edgeLen;
-    Op[eg, 1, 3*(edgeEnd[eg]-1)+1]   := Op[eg, 1, 3*(edgeEnd[eg]-1)+1]   + 1.5*tangent[0]/edgeLen;
-    Op[eg, 2, 3*(edgeEnd[eg]-1)+1]   := Op[eg, 2, 3*(edgeEnd[eg]-1)+1]   + 1.5*tangent[1]/edgeLen;
-
-    for i := 1 to 2 do
-    begin
-      if i = 1 then nodeIdx := edgeStart[eg] else nodeIdx := edgeEnd[eg];
-      // theta_x-like dof (w_x, local column offset +2)
-      Op[eg, 1, 3*(nodeIdx-1)+2] := Op[eg, 1, 3*(nodeIdx-1)+2]
-        - 0.25*tangent[0]*tangent[0] + 0.5*normal[0]*normal[0];
-      Op[eg, 2, 3*(nodeIdx-1)+2] := Op[eg, 2, 3*(nodeIdx-1)+2]
-        - 0.25*tangent[1]*tangent[0] + 0.5*normal[1]*normal[0];
-      // theta_y-like dof (w_y, local column offset +3)
-      Op[eg, 1, 3*(nodeIdx-1)+3] := Op[eg, 1, 3*(nodeIdx-1)+3]
-        - 0.25*tangent[0]*tangent[1] + 0.5*normal[0]*normal[1];
-      Op[eg, 2, 3*(nodeIdx-1)+3] := Op[eg, 2, 3*(nodeIdx-1)+3]
-        - 0.25*tangent[1]*tangent[1] + 0.5*normal[1]*normal[1];
-    end;
-  end;
+  DKQOperators(px, py, Op);
 
   Dfac := (Thickness*Thickness*Thickness / 12.0) * (E / (1.0 - Nu*Nu));
   D[1,1] := Dfac;       D[1,2] := Dfac*Nu;    D[1,3] := 0;
@@ -867,65 +925,7 @@ begin
   gp := QuadGaussPoints2x2;
   for g := 0 to NGaussPlate - 1 do
   begin
-    sf4 := QuadShapeFuncsAt(gp[g].Xi, gp[g].Eta);
-    sf8 := Quad8ShapeFuncsAt(gp[g].Xi, gp[g].Eta);
-
-    J11 := 0; J12 := 0; J21 := 0; J22 := 0;
-    for i := 1 to 4 do
-    begin
-      J11 := J11 + sf4.dNdXi[i]  * px[i];
-      J12 := J12 + sf4.dNdXi[i]  * py[i];
-      J21 := J21 + sf4.dNdEta[i] * px[i];
-      J22 := J22 + sf4.dNdEta[i] * py[i];
-    end;
-    detJ := Inv2x2(J11, J12, J21, J22, invJ11, invJ12, invJ21, invJ22);
-    if detJ <= 0 then
-      raise Exception.Create('DKQ plate element has non-positive Jacobian determinant (inverted or degenerate shape)');
-
-    for col := 1 to 12 do
-    begin
-      NatGradWx[col, 1] := 0; NatGradWx[col, 2] := 0;
-      NatGradWy[col, 1] := 0; NatGradWy[col, 2] := 0;
-    end;
-
-    // corner contribution: w_x field directly carries node i's w_x dof
-    // (weighted by the Q8 corner shape function), likewise w_y.
-    for i := 1 to 4 do
-    begin
-      col := 3*(i-1) + 2; // w_x dof of node i
-      NatGradWx[col, 1] := NatGradWx[col, 1] + sf8.dNdXi[i];
-      NatGradWx[col, 2] := NatGradWx[col, 2] + sf8.dNdEta[i];
-      col := 3*(i-1) + 3; // w_y dof of node i
-      NatGradWy[col, 1] := NatGradWy[col, 1] + sf8.dNdXi[i];
-      NatGradWy[col, 2] := NatGradWy[col, 2] + sf8.dNdEta[i];
-    end;
-
-    // midpoint contribution: each edge's constrained gradient(w),
-    // weighted by that midpoint's Q8 shape function.
-    for eg := 1 to 4 do
-      for col := 1 to 12 do
-      begin
-        NatGradWx[col, 1] := NatGradWx[col, 1] + sf8.dNdXi[4+eg]  * Op[eg, 1, col];
-        NatGradWx[col, 2] := NatGradWx[col, 2] + sf8.dNdEta[4+eg] * Op[eg, 1, col];
-        NatGradWy[col, 1] := NatGradWy[col, 1] + sf8.dNdXi[4+eg]  * Op[eg, 2, col];
-        NatGradWy[col, 2] := NatGradWy[col, 2] + sf8.dNdEta[4+eg] * Op[eg, 2, col];
-      end;
-
-    for col := 1 to 12 do
-    begin
-      PhysWx_x[col] := invJ11*NatGradWx[col,1] + invJ12*NatGradWx[col,2]; // d(w,x)/dx
-      PhysWx_y[col] := invJ21*NatGradWx[col,1] + invJ22*NatGradWx[col,2]; // d(w,x)/dy
-      PhysWy_x[col] := invJ11*NatGradWy[col,1] + invJ12*NatGradWy[col,2]; // d(w,y)/dx
-      PhysWy_y[col] := invJ21*NatGradWy[col,1] + invJ22*NatGradWy[col,2]; // d(w,y)/dy
-    end;
-
-    for col := 1 to 12 do
-    begin
-      B[1, col] := PhysWx_x[col];                  // kappa_xx = d(w,x)/dx
-      B[2, col] := PhysWy_y[col];                   // kappa_yy = d(w,y)/dy
-      B[3, col] := PhysWx_y[col] + PhysWy_x[col];   // 2*kappa_xy
-    end;
-
+    DKQBAt(Op, px, py, gp[g].Xi, gp[g].Eta, @B[1, 1], detJ);
     // Result += B^T * D * B * detJ * weight
     AccumBtDB(Result, B, D, 3, 12, detJ * gp[g].Weight);
   end;
@@ -1002,20 +1002,16 @@ function QuadShellStiffness3D(E, Nu, Thickness, DrillFactor: Double;
 var
   F: TFrame3;
   p: array[1..4] of TVec3;
-  lx, ly: array[1..4] of Double;
-  i: Integer;
+  lx, ly: TQuadCoords;
 begin
   p[1] := Vec3(x1, y1, z1); p[2] := Vec3(x2, y2, z2);
   p[3] := Vec3(x3, y3, z3); p[4] := Vec3(x4, y4, z4);
 
   // Same local-basis construction as QuadMembraneStiffness3D.
-  F := QuadFrame(p[1], p[2], p[4],
+  QuadLocalGeometry(4, p,
     'Quad shell element has a zero-length 1-2 edge (coincident nodes)',
-    'Quad shell element is degenerate (nodes 1, 2, 4 are collinear)');
-
-  lx[1] := 0; ly[1] := 0;
-  for i := 2 to 4 do
-    ProjectToFrame(F, p[1], p[i], lx[i], ly[i]);
+    'Quad shell element is degenerate (nodes 1, 2, 4 are collinear)',
+    F, lx, ly);
 
   // T: global (x,y,z,rx,ry,rz)*4 -> local (u,v,w,rx,ry,rz)*4. Rotation dof
   // transform by the same Lam as translations (a proper vector under a pure

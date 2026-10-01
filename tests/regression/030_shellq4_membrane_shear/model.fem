@@ -1,0 +1,50 @@
+# FreePascal FEM Suite - native model format
+[HEADER]
+Solver=linstatic
+Units=SI (N, m, Pa)
+
+[NODES]
+# id, x, y, z
+1, 0, 0, 0
+2, 2, 0, 0
+3, 2, 1, 0
+4, 0, 1, 0
+
+[MATERIALS]
+# id, E, nu, rho
+1, 200000000000, 0.3, -
+
+[PROPERTIES]
+# id, type, material, thickness
+1, shellq4, 1, 0.05
+
+[ELEMENTS]
+# id, type, node1..., property
+1, shellq4, 1, 2, 3, 4, 1
+
+[FREEDOMCASE default]
+# Uniform simple shear u = gamma*y, v = 0, gamma = 0.001: every node gets its exact u (v=0); the bottom edge
+# (y=0) is fully clamped; bending dof elsewhere are left free (they solve to zero).
+1, x, 0
+1, y, 0
+1, z, 0
+1, rx, 0
+1, ry, 0
+1, rz, 0
+2, x, 0
+2, y, 0
+2, z, 0
+2, rx, 0
+2, ry, 0
+2, rz, 0
+3, x, 0.001
+3, y, 0
+4, x, 0.001
+4, y, 0
+
+[LOADCASE default]
+# none -- prescribed-displacement case
+
+[SOLVERPARAMS]
+Tolerance=1E-9
+Verbose=0
