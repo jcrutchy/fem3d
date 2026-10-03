@@ -42,6 +42,11 @@ third-party dependencies — only the FPC standard RTL (`fpjson`,
     inline loops. Pure Pascal; an optional SSE2 `RowAxpy` kernel is
     available with `-dFEM_USE_ASM` (x86-64 Linux/Win64). Verified by
     `src/tools/matrix_test`.
+  - `fem_fingerprint.pas` — the model fingerprint: SHA-256 of the model
+    file's canonical text (comments, blank lines, indentation and line
+    endings ignored), printed by every solver as `MODEL.FINGERPRINT=` so a
+    viewer can detect results that are stale for the model it is showing.
+    Checked by `src/tools/fingerprint_test`; rule in `docs/native_format.md`.
   - `fem_results.pas` / `fem_results_out.pas` — element force and stress
     recovery (truss axial force; shell membrane/bending/face stresses; beam shear/moment/torque at
     `BeamDivisions` stations, in local and global axes, with extreme-fibre
@@ -288,12 +293,26 @@ independently cross-checked one). Every tutorial's model is a real
       top/bottom face stresses with principal values, von Mises and
       Tresca. Regression cases 020-031, plus `results_test` and
       `shell_results_test`. See `docs/native_format.md`.
-- [ ] Results viewer GUI (deformed shape, element force diagrams, stress
-      contours). Undecided between a Lazarus executable and a web app
-      (single-file HTML/JS, in keeping with the zero-dependency approach);
-      to be worked out. Needs a stable machine-readable results format
-      to read — the `DISP.*` / `REACT.*` / `ELEM.*` key=value output is the
-      natural starting point.
+- [x] External code review (Gemini) triaged against the code: fixed the
+      skyline solver accepting negative pivots (an indefinite system was
+      "solved"; also unchecked pivots on columns with no off-diagonals),
+      locale-dependent number parsing in `dxf2femgeo` (comma-decimal systems
+      silently produced all-zero geometry; `-dFEM_TEST_COMMA_LOCALE` now
+      reproduces it), the shellq4/shellq8 flatness tolerance (now relative to
+      the shorter edge; regression case 919), and an unguarded `Smax/sigma0 >= 1`
+      in the Newman closure. Per-iteration allocation in PCG removed
+      (byte-identical results). Checked by `src/tools/skyline_test`.
+- [x] Results viewer, web version (`viewer/`): plain HTML/CSS/JS, no
+      dependencies. A "dumb" viewer of a model file + solver output: 3-D
+      view with deformed shape, contours and curved beams; selecting an
+      element shows its force and stress diagrams, section view, Mohr's
+      circles and tables in a side panel. Solvers now print
+      `MODEL.FINGERPRINT` (SHA-256 of the canonical model text) and the
+      viewer refuses results that are not for the model it was given. See
+      `viewer/README.md`. A Lazarus version is still open; the format the
+      viewer reads is the same `DISP/REACT/ELEM` key=value output.
+- [ ] Viewer: solve from the browser through a vdrx route; JSON models and
+      modal results; depth-correct ordering of intersecting shells
 - [ ] Shell stress averaging across elements (nodal smoothing) and
       Gauss-point output, if the unaveraged centroid/corner values prove
       too coarse in practice

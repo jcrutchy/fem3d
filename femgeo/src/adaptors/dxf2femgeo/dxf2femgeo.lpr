@@ -56,6 +56,24 @@ var
   model: TFEMGeometryModel;
   diags: TGeoDiagnostics;
   nLine, nCircle, nArc, nUnsupported: Integer;
+  DxfFS: TFormatSettings;
+  DxfFSReady: Boolean = False;
+
+// DXF always writes numbers with a '.' decimal point, whatever the machine's
+// regional settings are. StrToFloatDef without explicit format settings uses the
+// OS locale, so on a comma-decimal system "12.34" silently converted to 0 and the
+// geometry came out as a cloud of zero-coordinate points with no error.
+function DxfNum(const S: string): Double;
+begin
+  if not DxfFSReady then
+  begin
+    DxfFS := DefaultFormatSettings;
+    DxfFS.DecimalSeparator := '.';
+    DxfFS.ThousandSeparator := ',';
+    DxfFSReady := True;
+  end;
+  Result := StrToFloatDef(Trim(S), 0, DxfFS);
+end;
 
 function AddOrWeldVertex(const P: TGeoVec3): Integer;
 var
@@ -290,15 +308,15 @@ begin
 
     case code of
       8:  cur.Layer := val;
-      10: begin cur.P1.X := StrToFloatDef(val, 0); cur.HasP1 := True; end;
-      20: cur.P1.Y := StrToFloatDef(val, 0);
-      30: cur.P1.Z := StrToFloatDef(val, 0);
-      11: begin cur.P2.X := StrToFloatDef(val, 0); cur.HasP2 := True; end;
-      21: cur.P2.Y := StrToFloatDef(val, 0);
-      31: cur.P2.Z := StrToFloatDef(val, 0);
-      40: begin cur.Radius := StrToFloatDef(val, 0); cur.HasRadius := True; end;
-      50: begin cur.StartAngle := StrToFloatDef(val, 0); cur.HasStartAngle := True; end;
-      51: begin cur.EndAngle := StrToFloatDef(val, 0); cur.HasEndAngle := True; end;
+      10: begin cur.P1.X := DxfNum(val); cur.HasP1 := True; end;
+      20: cur.P1.Y := DxfNum(val);
+      30: cur.P1.Z := DxfNum(val);
+      11: begin cur.P2.X := DxfNum(val); cur.HasP2 := True; end;
+      21: cur.P2.Y := DxfNum(val);
+      31: cur.P2.Z := DxfNum(val);
+      40: begin cur.Radius := DxfNum(val); cur.HasRadius := True; end;
+      50: begin cur.StartAngle := DxfNum(val); cur.HasStartAngle := True; end;
+      51: begin cur.EndAngle := DxfNum(val); cur.HasEndAngle := True; end;
     end;
   end;
 end;
@@ -310,6 +328,13 @@ var
   outStream, inStream: TStream;
 
 begin
+  {$IFDEF FEM_TEST_COMMA_LOCALE}
+  // Test hook: build with -dFEM_TEST_COMMA_LOCALE to emulate a comma-decimal
+  // regional setting (German, Spanish, ... Windows). The output for any DXF
+  // must be byte-identical to the normal build's.
+  DefaultFormatSettings.DecimalSeparator := ',';
+  DefaultFormatSettings.ThousandSeparator := '.';
+  {$ENDIF}
   if ParamCount <> 1 then
   begin
     WriteLn(StdErr, 'Usage: dxf2femgeo <file.dxf | ->');

@@ -162,6 +162,13 @@ var
   S, A0, A1, A2, A3: Double;
 begin
   S := SmaxOverSigma0;
+  // Smax/sigma0 >= 1 means the net section has yielded (plastic collapse): the
+  // closure model is not defined there (cos(pi/2 * S) <= 0 and a fractional power
+  // of it is not real). Without this guard that surfaced as an obscure floating-
+  // point exception.
+  if (S < 0.0) or (S >= 1.0) then
+    raise Exception.CreateFmt('NewmanClosureF: Smax/sigma0 must be in [0, 1) -- got %g ' +
+      '(at or above 1 the net section has yielded and crack closure is not defined)', [S]);
   A0 := (0.825 - 0.34 * Alpha + 0.05 * Alpha * Alpha) * Power(Cos(Pi / 2 * S), 1.0 / Alpha);
   A1 := (0.415 - 0.071 * Alpha) * S;
   A3 := 2 * A0 + A1 - 1;

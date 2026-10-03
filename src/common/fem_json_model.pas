@@ -5,7 +5,7 @@ unit fem_json_model;
 interface
 
 uses
-  fem_types, SysUtils, Classes, fpjson, jsonparser;
+  fem_types, fem_fingerprint, SysUtils, Classes, fpjson, jsonparser;
 
 // Loads and parses a model from any stream (file, stdin, ...) into a TModel.
 // Raises Exception with a human-readable message on malformed JSON or
@@ -60,6 +60,7 @@ var
   JCItem, JLItem, JTItem: TJSONObject;
   i, j: Integer;
   MemStream: TMemoryStream;
+  RawBytes: TBytes;
   buf: array[0..4095] of Byte;
   n: LongInt;
 begin
@@ -73,6 +74,12 @@ begin
       if n > 0 then MemStream.WriteBuffer(buf, n);
     until n <= 0;
     MemStream.Position := 0;
+    begin
+      SetLength(RawBytes, MemStream.Size);
+      if MemStream.Size > 0 then MemStream.ReadBuffer(RawBytes[0], MemStream.Size);
+      Result.Fingerprint := ModelFingerprint(RawBytes);
+      MemStream.Position := 0;
+    end;
 
     try
       JData := GetJSON(MemStream);

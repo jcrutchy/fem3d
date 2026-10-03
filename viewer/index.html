@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FEM results viewer</title>
+<link rel="stylesheet" href="css/viewer.css">
+</head>
+<body>
+<header class="bar">
+  <div class="brand">FEM viewer</div>
+
+  <label class="btn" title="Open a model (.fem) and the solver's output for it; select both at once, or drop them on the page">
+    Open&hellip;<input id="files" type="file" multiple hidden>
+  </label>
+  <select id="examples" title="Built-in examples"><option value="">Examples&hellip;</option></select>
+
+  <span class="sep"></span>
+  <label>Case <select id="case" disabled></select></label>
+  <label>Colour by <select id="field" disabled></select></label>
+
+  <span class="sep"></span>
+  <label class="chk"><input type="checkbox" id="deformed" checked> Deformed</label>
+  <input type="range" id="scale" min="-100" max="100" value="0" title="Deformation scale" aria-label="Deformation scale">
+  <output id="scaleOut" class="mono"></output>
+
+  <span class="sep"></span>
+  <div class="btns" role="group" aria-label="View">
+    <button type="button" data-view="iso" title="Isometric">Iso</button>
+    <button type="button" data-view="top" title="Top (looking down Z)">Top</button>
+    <button type="button" data-view="front" title="Front (looking along Y)">Front</button>
+    <button type="button" data-view="side" title="Side (looking along X)">Side</button>
+    <button type="button" data-view="fit" title="Fit to window (F)">Fit</button>
+  </div>
+
+  <div class="btns" role="group" aria-label="Labels">
+    <button type="button" class="toggle" id="tgNodes" aria-pressed="false" title="Show nodes (N)">Nodes</button>
+    <button type="button" class="toggle" id="tgNodeIds" aria-pressed="false" title="Node numbers (M)">Node #</button>
+    <button type="button" class="toggle" id="tgElIds" aria-pressed="false" title="Element numbers (E)">Elem #</button>
+  </div>
+
+  <details class="menu">
+    <summary>Display</summary>
+    <div class="menubody">
+      <label><input type="checkbox" id="optGhost" checked> Undeformed outline</label>
+      <label><input type="checkbox" id="optCurved" checked> Curved beams</label>
+      <label><input type="checkbox" id="optMesh" checked> Element edges</label>
+      <label><input type="checkbox" id="optSupports" checked> Supports</label>
+      <label><input type="checkbox" id="optLoads" checked> Applied loads</label>
+      <label><input type="checkbox" id="optPersp" checked> Perspective</label>
+      <label><input type="checkbox" id="optLight"> Light theme</label>
+    </div>
+  </details>
+  <button type="button" id="png" title="Save the 3D view as an image">PNG</button>
+</header>
+
+<main>
+  <section id="stage">
+    <canvas id="view" tabindex="0" aria-label="3D view of the structure"></canvas>
+    <div id="banner" role="alert" hidden></div>
+    <div id="drop" hidden>Drop the model (.fem) and the solver output here</div>
+  </section>
+  <aside id="panel" aria-live="polite">
+    <div id="panelBody"></div>
+  </aside>
+</main>
+
+<footer id="status"><span id="statusText">No model loaded.</span></footer>
+
+<script src="js/femhash.js"></script>
+<script src="js/femparse.js"></script>
+<script src="js/femmath.js"></script>
+<script src="js/femscene.js"></script>
+<script src="js/femcheck.js"></script>
+<script src="js/render3d.js"></script>
+<script src="js/panels.js"></script>
+<script src="js/examples_data.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

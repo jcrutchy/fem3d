@@ -15,6 +15,10 @@ unit fem_results_out;
 //                          .N .VY .VZ .T .MY .MZ    member-local (principal) axes
 //                          .GFX .GFY .GFZ .GMX .GMY .GMZ   same, global axes
 //                          .SIGAX .SIGMAX .SIGMIN .TAU .VM .TRESCA
+//                          .SIGC1 .. .SIGC4         stress at the four section corners (only when Cy and
+//                                                   Cz are given), in the order (+Cy,+Cz) (-Cy,+Cz)
+//                                                   (+Cy,-Cz) (-Cy,-Cz) of the member's local y, z axes
+//          ELEM.<id>.EX.X/.Y/.Z  EY.*  EZ.*         member axes in global coordinates
 //          k = 0..BeamDivisions (0 = node 1, BeamDivisions = node 2)
 //   shell  ELEM.<id>.EX.X/.Y/.Z  EY.*  EZ.*         element axes in global coordinates
 //          ELEM.<id>.<loc>.NXX .NYY .NXY            membrane force / length
@@ -67,9 +71,16 @@ end;
 procedure EmitBeam(var OutF: Text; const P: string; const el: TElement;
   const R: TBeamResult; const FS: TFormatSettings);
 var
-  k: Integer;
+  k, a, c: Integer;
   B: string;
+  Ax: array[0..2] of TVec3;
+  AxName: array[0..2] of string = ('EX', 'EY', 'EZ');
+  Comp: array[0..2] of string = ('X', 'Y', 'Z');
 begin
+  Ax[0] := R.Frame.ex; Ax[1] := R.Frame.ey; Ax[2] := R.Frame.ez;
+  for a := 0 to 2 do
+    for c := 0 to 2 do
+      Emit(OutF, Format('%sELEM.%d.%s.%s', [P, el.Id, AxName[a], Comp[c]]), Ax[a][c], FS);
   for k := 0 to High(R.Stations) do
   begin
     B := Format('%sELEM.%d.S%d.', [P, el.Id, k]);
@@ -86,6 +97,11 @@ begin
       Emit(OutF, B + 'TAU', Tau, FS);
       Emit(OutF, B + 'VM', VonMises, FS);
       Emit(OutF, B + 'TRESCA', Tresca, FS);
+      if R.HasBendingStress then
+      begin
+        Emit(OutF, B + 'SIGC1', SigC[0], FS); Emit(OutF, B + 'SIGC2', SigC[1], FS);
+        Emit(OutF, B + 'SIGC3', SigC[2], FS); Emit(OutF, B + 'SIGC4', SigC[3], FS);
+      end;
     end;
   end;
 end;

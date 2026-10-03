@@ -5,7 +5,7 @@ unit fem_pcg;
 interface
 
 uses
-  fem_types, fem_index, fem_dofmap, fem_elements, Classes, SysUtils, Math;
+  fem_types, fem_index, fem_dofmap, fem_elements, fem_matrix, Classes, SysUtils, Math;
 
 type
   // One element's precomputed local stiffness plus the (0-based) equation
@@ -126,6 +126,14 @@ procedure ICFactorize(const Pat: TCSRPattern; var Values: TDoubleArray; NEQ: Int
 function ICForwardBackSolve(const Pat: TCSRPattern; const Values: TDoubleArray;
   const rhs: TDoubleArray; NEQ: Integer): TDoubleArray;
 
+// The same solve into caller-owned arrays: y is scratch space, z receives the
+// result. Both are (re)sized to NEQ + 1 only if they are not already that
+// length, so calling this once per PCG iteration allocates nothing after the
+// first call (ICForwardBackSolve above allocates two NEQ-length arrays on
+// every call).
+procedure ICApply(const Pat: TCSRPattern; const Values: TDoubleArray;
+  const rhs: TDoubleArray; NEQ: Integer; var y, z: TDoubleArray);
+
 // Attempts IC(0) with a small diagonal shift if the unshifted factorization
 // breaks down (see docs/linsparse.md -- dropping fill-in during an
 // incomplete factorization can make an intermediate pivot go non-positive
@@ -152,12 +160,18 @@ function CreateSpinWorkerPool(const ED: TElementDataArray; NEQ, NumThreads: Inte
 procedure FreeSpinWorkerPool(var Pool: TSpinWorkerPool);
 function ParallelMatVecSpin(const ED: TElementDataArray; const x: TDoubleArray;
   NEQ: Integer; const Pool: TSpinWorkerPool): TDoubleArray;
+// ... and into a caller-owned result array (no per-call allocation).
+procedure ParallelMatVecSpinInto(const ED: TElementDataArray; const x: TDoubleArray;
+  NEQ: Integer; const Pool: TSpinWorkerPool; var Result: TDoubleArray);
 
 // y = Kff * x over the reduced (free-dof-only) system, computed directly
 // from element contributions -- no global matrix is ever assembled, which
 // is the whole memory-scaling point of this solver (see docs/linsparse.md).
 function ParallelMatVec(const ED: TElementDataArray; const x: TDoubleArray;
   NEQ: Integer; const Pool: TWorkerPool): TDoubleArray;
+// ... and into a caller-owned result array (no per-call allocation).
+procedure ParallelMatVecInto(const ED: TElementDataArray; const x: TDoubleArray;
+  NEQ: Integer; const Pool: TWorkerPool; var Result: TDoubleArray);
 
 const
   DefaultThreadCount = 4;
@@ -381,10 +395,9 @@ begin
   end;
 end;
 
-function ICForwardBackSolve(const Pat: TCSRPattern; const Values: TDoubleArray;
-  const rhs: TDoubleArray; NEQ: Integer): TDoubleArray;
+procedure ICApply(const Pat: TCSRPattern; const Values: TDoubleArray;
+  const rhs: TDoubleArray; NEQ: Integer; var y, z: TDoubleArray);
 var
-  y, z: TDoubleArray;
   k, idx, rowStart, rowEnd, col: Integer;
 begin
   // forward: U^T y = rhs (U^T lower triangular; scatter contributions
@@ -419,7 +432,16 @@ begin
     end;
     z[k] := z[k] / Values[Pat.RowPtr[k]];
   end;
-  Result := z;
+end;
+
+function ICForwardBackSolve(const Pat: TCSRPattern; const Values: TDoubleArray;
+  const rhs: TDoubleArray; NEQ: Integer): TDoubleArray;
+var
+  y: TDoubleArray;
+begin
+  SetLength(y, 0);
+  SetLength(Result, 0);
+  ICApply(Pat, Values, rhs, NEQ, y, Result);
 end;
 
 function BuildIC0WithFallback(const Pat: TCSRPattern; const KValues: TDoubleArray;
@@ -473,8 +495,8 @@ var
   Klocal: TElemMatrix;
   sum: Double;
 begin
-  SetLength(y, NEQ + 1);
-  for i := 1 to NEQ do y[i] := 0.0;
+  SetLength(y, NEQ + 1);  // no-op when y is already NEQ + 1 long (the usual case)
+  if NEQ > 0 then FillChar(y[1], NEQ * SizeOf(Double), 0);
   for ei := StartIdx to EndIdx do
   begin
     Klocal := ED[ei].Klocal;
@@ -592,10 +614,11 @@ begin
   SetLength(Pool, 0);
 end;
 
-function ParallelMatVec(const ED: TElementDataArray; const x: TDoubleArray;
-  NEQ: Integer; const Pool: TWorkerPool): TDoubleArray;
+procedure ParallelMatVecInto(const ED: TElementDataArray; const x: TDoubleArray;
+  NEQ: Integer; const Pool: TWorkerPool; var Result: TDoubleArray);
 var
-  t, i: Integer;
+  t: Integer;
+  yt: TDoubleArray;
 begin
   if Length(Pool) = 0 then
   begin
@@ -606,13 +629,20 @@ begin
   for t := 0 to High(Pool) do
     Pool[t].SignalWork(x);
   SetLength(Result, NEQ + 1);
-  for i := 1 to NEQ do Result[i] := 0.0;
+  if NEQ > 0 then FillChar(Result[1], NEQ * SizeOf(Double), 0);
   for t := 0 to High(Pool) do
   begin
     Pool[t].WaitForDone;
-    for i := 1 to NEQ do
-      Result[i] := Result[i] + Pool[t].Y[i];
+    yt := Pool[t].Y;
+    RowAxpy(@Result[1], @yt[1], 1.0, NEQ);  // Result += Y_t, in the same worker order as before
   end;
+end;
+
+function ParallelMatVec(const ED: TElementDataArray; const x: TDoubleArray;
+  NEQ: Integer; const Pool: TWorkerPool): TDoubleArray;
+begin
+  SetLength(Result, 0);
+  ParallelMatVecInto(ED, x, NEQ, Pool, Result);
 end;
 
 // ---- Spin-wait helper -------------------------------------------------
@@ -741,10 +771,11 @@ begin
   SetLength(Pool, 0);
 end;
 
-function ParallelMatVecSpin(const ED: TElementDataArray; const x: TDoubleArray;
-  NEQ: Integer; const Pool: TSpinWorkerPool): TDoubleArray;
+procedure ParallelMatVecSpinInto(const ED: TElementDataArray; const x: TDoubleArray;
+  NEQ: Integer; const Pool: TSpinWorkerPool; var Result: TDoubleArray);
 var
-  t, i: Integer;
+  t: Integer;
+  yt: TDoubleArray;
 begin
   if Length(Pool) = 0 then
   begin
@@ -755,13 +786,20 @@ begin
   for t := 0 to High(Pool) do
     Pool[t].SignalWork(x);
   SetLength(Result, NEQ + 1);
-  for i := 1 to NEQ do Result[i] := 0.0;
+  if NEQ > 0 then FillChar(Result[1], NEQ * SizeOf(Double), 0);
   for t := 0 to High(Pool) do
   begin
     Pool[t].WaitForDone;
-    for i := 1 to NEQ do
-      Result[i] := Result[i] + Pool[t].Y[i];
+    yt := Pool[t].Y;
+    RowAxpy(@Result[1], @yt[1], 1.0, NEQ);  // Result += Y_t, in the same worker order as before
   end;
+end;
+
+function ParallelMatVecSpin(const ED: TElementDataArray; const x: TDoubleArray;
+  NEQ: Integer; const Pool: TSpinWorkerPool): TDoubleArray;
+begin
+  SetLength(Result, 0);
+  ParallelMatVecSpinInto(ED, x, NEQ, Pool, Result);
 end;
 
 function VecDot(const a, b: TDoubleArray; N: Integer): Double;
@@ -784,7 +822,7 @@ function PCGSolve(const ED: TElementDataArray; const b: TDoubleArray;
 var
   Pat: TCSRPattern;
   KValues, ICValues: TDoubleArray;
-  x, r, z, p, Ap: TDoubleArray;
+  x, r, z, p, Ap, wy: TDoubleArray;   // wy: scratch for the IC solve
   i, iter, maxIter: Integer;
   rz, rzNew, pAp, alpha, beta, bnorm: Double;
   Pool: TWorkerPool;
@@ -802,7 +840,13 @@ begin
     x[i] := 0.0;
     r[i] := b[i];
   end;
-  z := ICForwardBackSolve(Pat, ICValues, r, NEQ);
+  // Work arrays for the whole iteration, allocated once: Ap (K*p) and the two
+  // arrays the IC solve needs. Allocating them per iteration cost three
+  // NEQ-length allocations (page-faults and zero-fill for large models) every pass.
+  SetLength(Ap, NEQ + 1);
+  SetLength(wy, NEQ + 1);
+  SetLength(z, NEQ + 1);
+  ICApply(Pat, ICValues, r, NEQ, wy, z);
   for i := 1 to NEQ do
     p[i] := z[i];
 
@@ -823,7 +867,7 @@ begin
     try
       for iter := 1 to maxIter do
       begin
-        Ap := ParallelMatVecSpin(ED, p, NEQ, SpinPool);
+        ParallelMatVecSpinInto(ED, p, NEQ, SpinPool, Ap);
         pAp := VecDot(p, Ap, NEQ);
         if pAp <= 0 then
           raise Exception.CreateFmt(
@@ -841,7 +885,7 @@ begin
           Result := x;
           Exit;
         end;
-        z := ICForwardBackSolve(Pat, ICValues, r, NEQ);
+        ICApply(Pat, ICValues, r, NEQ, wy, z);
         rzNew := VecDot(r, z, NEQ);
         beta := rzNew / rz;
         for i := 1 to NEQ do
@@ -859,7 +903,7 @@ begin
     try
       for iter := 1 to maxIter do
       begin
-        Ap := ParallelMatVec(ED, p, NEQ, Pool);
+        ParallelMatVecInto(ED, p, NEQ, Pool, Ap);
         pAp := VecDot(p, Ap, NEQ);
         if pAp <= 0 then
           raise Exception.CreateFmt(
@@ -877,7 +921,7 @@ begin
           Result := x;
           Exit;
         end;
-        z := ICForwardBackSolve(Pat, ICValues, r, NEQ);
+        ICApply(Pat, ICValues, r, NEQ, wy, z);
         rzNew := VecDot(r, z, NEQ);
         beta := rzNew / rz;
         for i := 1 to NEQ do

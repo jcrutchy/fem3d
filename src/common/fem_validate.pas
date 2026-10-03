@@ -52,7 +52,7 @@ var
   n3, n4: TNode;
   n5, n6, n7, n8: TNode;
   e1x, e1y, e1z, e2x, e2y, e2z, e1Len, e2Len, nx, ny, nz, nLen: Double;
-  charLen, d3x, d3y, d3z, outOfPlane: Double;
+  charLen, shortLen, d3x, d3y, d3z, outOfPlane: Double;
   FreedomCaseIds, LoadCaseIds: TStringList;
   SeenConstraintKeys: TStringList;
   constraintKey: string;
@@ -328,15 +328,19 @@ begin
         else
         begin
           // signed distance of node 3 from the plane through node1 with
-          // normal (nx,ny,nz)/nLen, relative to a characteristic length
-          // (the longer of the two edges off node 1) so the tolerance
-          // scales with element size rather than being an absolute unit.
+          // normal (nx,ny,nz)/nLen, relative to the SHORTER of the two edges
+          // off node 1, so the tolerance scales with element size rather than
+          // being an absolute unit. The shorter edge is the right yardstick:
+          // a warp that is tiny against a long edge can still be a large
+          // fraction of a narrow element's width (a 1 m x 5 mm strip with node
+          // 3 lifted 5 mm is a badly twisted element, yet only 0.5% of its
+          // length). Measuring against the longer edge let those through.
           charLen := e1Len;
-          if e2Len > charLen then charLen := e2Len;
+          if e2Len < charLen then charLen := e2Len;
           d3x := n3.X-n1.X; d3y := n3.Y-n1.Y; d3z := n3.Z-n1.Z;
           outOfPlane := Abs((d3x*nx + d3y*ny + d3z*nz) / nLen);
           if outOfPlane > 0.01 * charLen then
-            Errs.Add(Format('Element %d: shellq4 is not flat -- node %d is %.4g%% of the element''s characteristic edge length out of the plane through nodes %d, %d, %d',
+            Errs.Add(Format('Element %d: shellq4 is not flat -- node %d is %.4g%% of the element''s shorter edge length out of the plane through nodes %d, %d, %d',
               [el.Id, el.NodeIds[2], 100.0*outOfPlane/charLen, el.NodeIds[0], el.NodeIds[1], el.NodeIds[3]]))
           else
             CheckQuadCornerOrientation(el, n1, n2, n3, n4, nx/nLen, ny/nLen, nz/nLen);
@@ -380,13 +384,18 @@ begin
           Errs.Add(Format('Element %d: shellq8 nodes 1, 2, and 4 are collinear (degenerate quad)', [el.Id]))
         else
         begin
+          // flatness is measured against the shorter edge (see the shellq4 check
+          // above); the midside-node position checks below keep the longer-edge
+          // scale they were written against.
           charLen := e1Len;
           if e2Len > charLen then charLen := e2Len;
+          shortLen := e1Len;
+          if e2Len < shortLen then shortLen := e2Len;
           d3x := n3.X-n1.X; d3y := n3.Y-n1.Y; d3z := n3.Z-n1.Z;
           outOfPlane := Abs((d3x*nx + d3y*ny + d3z*nz) / nLen);
-          if outOfPlane > 0.01 * charLen then
-            Errs.Add(Format('Element %d: shellq8 is not flat -- corner node %d is %.4g%% of the element''s characteristic edge length out of the plane through nodes %d, %d, %d',
-              [el.Id, el.NodeIds[2], 100.0*outOfPlane/charLen, el.NodeIds[0], el.NodeIds[1], el.NodeIds[3]]))
+          if outOfPlane > 0.01 * shortLen then
+            Errs.Add(Format('Element %d: shellq8 is not flat -- corner node %d is %.4g%% of the element''s shorter edge length out of the plane through nodes %d, %d, %d',
+              [el.Id, el.NodeIds[2], 100.0*outOfPlane/shortLen, el.NodeIds[0], el.NodeIds[1], el.NodeIds[3]]))
           else
           begin
             CheckQuadCornerOrientation(el, n1, n2, n3, n4, nx/nLen, ny/nLen, nz/nLen);

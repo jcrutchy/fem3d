@@ -74,6 +74,8 @@ type
     // stresses (valid only if the owning TBeamResult.HasStress)
     SigAxial: Double;   // N/A
     SigMax, SigMin: Double; // extreme-fibre axial+bending stress, over the four section corners
+    SigC: array[0..3] of Double; // stress at each corner, in this order: (+Cy,+Cz) (-Cy,+Cz) (+Cy,-Cz) (-Cy,-Cz)
+                                 // (all equal to SigAxial when HasBendingStress is False)
     Tau: Double;        // torsional shear at the outer fibre, T*Rt/J (0 if Rt not given)
     VonMises, Tresca: Double; // worst corner, combining sigma and tau
   end;
@@ -82,6 +84,7 @@ type
     Length: Double;
     HasBendingStress: Boolean; // Cy and Cz were given -> SigMax/SigMin include bending
     HasTorsionStress: Boolean; // Rt was given -> Tau included
+    Frame: TFrame3;            // member axes in global coordinates (ex along the member)
     Stations: array of TBeamStation;
   end;
 
@@ -246,6 +249,7 @@ begin
   end;
 
   Result.Length := L;
+  Result.Frame := F;
   Result.HasBendingStress := (prop.Cy > 0) and (prop.Cz > 0);
   Result.HasTorsionStress := prop.Rt > 0;
   SetLength(Result.Stations, Divisions + 1);
@@ -284,6 +288,7 @@ begin
 
     stn.SigMax := stn.SigAxial;
     stn.SigMin := stn.SigAxial;
+    for k := 0 to 3 do stn.SigC[k] := stn.SigAxial;
     stn.VonMises := 0.0;
     stn.Tresca := 0.0;
     if Result.HasBendingStress then
@@ -294,6 +299,7 @@ begin
         if (k and 1) = 0 then y := prop.Cy else y := -prop.Cy;
         if (k and 2) = 0 then z := prop.Cz else z := -prop.Cz;
         sigC := stn.N / prop.Area - stn.Mz * y / prop.Iz + stn.My * z / prop.Iy;
+        stn.SigC[k] := sigC;
         if k = 0 then
         begin
           stn.SigMax := sigC; stn.SigMin := sigC;

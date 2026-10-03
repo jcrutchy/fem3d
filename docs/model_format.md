@@ -43,7 +43,8 @@ example in the actual file syntax.
   perimeter (clockwise or counterclockwise -- the element's local frame
   follows the ordering you give, so reversing it gives the same answer
   to machine precision), and must be flat (all 4 nodes coplanar, within
-  1% of the element's characteristic edge length) and a valid convex
+  1% of the element's shorter edge length -- so a long thin strip is
+  held to its width, not its length) and a valid convex
   quadrilateral (no concave corner, no three consecutive corners
   collinear, and not a self-intersecting "bow-tie" order such as
   1-2-4-3) -- all checked by the validator, not left to degrade
@@ -121,7 +122,7 @@ matrix. It checks, among other things:
 - a beam's `refVec` (or the default heuristic, if none given) being
   (near-)parallel to its own axis -- degenerate, can't fix its roll
 - a shellq4's 4 nodes (or a shellq8's 4 corner nodes) are coplanar
-  (within 1% of its characteristic edge length) -- both formulations
+  (within 1% of its shorter edge length) -- both formulations
   assume a flat element
 - a shellq4/shellq8's corners form a valid convex quadrilateral: each
   corner must turn the same way as corner 1, so a concave (reentrant)

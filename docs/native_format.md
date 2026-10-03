@@ -158,7 +158,7 @@ combined state, not by combining the individual cases' von Mises values.
 |---|---|
 | truss | `ELEM.<id>.N` (tension +), `.SIGMA`, `.VM`, `.TRESCA` |
 | shellq4, shellq8 | `ELEM.<id>.EX.X/.Y/.Z`, `EY.*`, `EZ.*` (the element's axes in global coordinates); then for each location `<loc>` = `C` (centroid) or `N1`…`N4` (corner nodes 1–4): `ELEM.<id>.<loc>.` + `NXX NYY NXY` (membrane force per unit length), `MXX MYY MXY` (bending moment per unit length), `QX QY` (transverse shear force per unit length, **shellq8 only**), and `TOP.` / `BOT.` + `SXX SYY TXY S1 S2 ANG VM TRESCA` (face stresses) |
-| beam | `ELEM.<id>.S<k>.` then `POS` (distance from node 1); `N`, `VY`, `VZ`, `T`, `MY`, `MZ` (member-local axes); `GFX`, `GFY`, `GFZ`, `GMX`, `GMY`, `GMZ` (same resultants on global axes); `SIGAX`, `SIGMAX`, `SIGMIN`, `TAU`, `VM`, `TRESCA` — `k` runs `0` (node 1) to `BeamDivisions` (node 2) |
+| beam | `ELEM.<id>.EX.X/.Y/.Z`, `EY.*`, `EZ.*` (the member's axes in global coordinates); then `ELEM.<id>.S<k>.` + `POS` (distance from node 1); `N`, `VY`, `VZ`, `T`, `MY`, `MZ` (member-local axes); `GFX`, `GFY`, `GFZ`, `GMX`, `GMY`, `GMZ` (same resultants on global axes); `SIGAX`, `SIGMAX`, `SIGMIN`, `TAU`, `VM`, `TRESCA`; and, when `Cy` and `Cz` are given, `SIGC1`…`SIGC4` (the stress at each section corner, in the order (+Cy,+Cz) (−Cy,+Cz) (+Cy,−Cz) (−Cy,−Cz)) — `k` runs `0` (node 1) to `BeamDivisions` (node 2) |
 
 **Sign convention.** Beam resultants are the forces on the section's
 *positive* face (the face looking toward node 2): `N` is tension-positive,
@@ -221,6 +221,38 @@ averaged** with neighbouring elements, so on a coarse mesh expect a jump
 in stress from one element to the next, and expect the corner values to be
 less accurate than the centroid for a bilinear element. Refine the mesh
 until neighbouring elements agree.
+
+## Model fingerprint (results ↔ model)
+
+Every solver prints, before any results, one line:
+
+```
+MODEL.FINGERPRINT=<64 hex digits>
+```
+
+It is the SHA-256 of the model file's **canonical text**, so a viewer (or
+you) can check that a set of results was computed from exactly the model in
+front of them, and not from an earlier version of it. The canonical text is:
+
+1. drop a leading UTF-8 byte-order mark;
+2. split into lines at LF, CR LF or a lone CR;
+3. strip leading and trailing spaces and tabs from every line;
+4. drop lines that are then empty or begin with `#`;
+5. write each remaining line followed by one LF.
+
+So re-saving the file with other line endings, indentation, blank lines or
+comments does **not** change the fingerprint; changing any value, id, name or
+the order of the data does. It is printed even when `Verbose=0`, and goes to
+the `ResultsFile` if one is set. `src/common/fem_fingerprint.pas` computes it
+for the solvers and `viewer/js/femhash.js` repeats the same rule in
+JavaScript; `src/tools/fingerprint_test` and the viewer's tests keep the two in
+step (the viewer's tests check that the JavaScript value equals the one a
+solver printed).
+
+This is a consistency check against stale or mismatched files, not a security
+feature: anyone can recompute it. It covers the model file only — not the
+solver's version — and counts as a change any edit to the data, including
+rewriting `1.0` as `1`.
 
 ## Results file
 

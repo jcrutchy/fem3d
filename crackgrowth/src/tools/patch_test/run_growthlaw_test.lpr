@@ -161,6 +161,28 @@ begin
   Check('ConservativeRate on a material with no usable law raises', gotException,
     'no exception was raised');
 
+  // --- 13. Newman closure is only defined below net-section yield ---
+  // Smax/sigma0 >= 1 gives cos(pi/2 * S) <= 0, whose fractional power is not
+  // real; that used to surface as an obscure floating-point exception.
+  Check('Newman closure: a valid Smax/sigma0 (0.3) still evaluates',
+    NewmanClosureF(0.1, 0.3, 2.0) > 0.0, 'non-positive closure factor');
+  gotException := False;
+  try
+    NewmanClosureF(0.1, 1.0, 2.0);
+  except
+    on E: Exception do gotException := (Pos('Smax/sigma0', E.Message) > 0);
+  end;
+  Check('Newman closure: Smax/sigma0 = 1 raises a clear message', gotException,
+    'no (or an unclear) exception');
+  gotException := False;
+  try
+    NewmanClosureF(0.1, 1.3, 2.0);
+  except
+    on E: Exception do gotException := (Pos('Smax/sigma0', E.Message) > 0);
+  end;
+  Check('Newman closure: Smax/sigma0 > 1 raises a clear message', gotException,
+    'no (or an unclear) exception');
+
   WriteLn;
   if FailCount = 0 then
     WriteLn('ALL CHECKS PASSED')

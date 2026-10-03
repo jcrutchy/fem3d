@@ -144,34 +144,43 @@ begin
     FMaxOrigDiag := 1.0;
   relTol := PivotTolerance * FMaxOrigDiag;
 
-  if (FNeq >= 1) and (Abs(FAA[FMaxa[1]]) < relTol) then
-    raise Exception.CreateFmt(
-      'Singular or near-singular system: zero pivot at equation %d ' +
-      '(check for unconstrained rigid-body motion or a disconnected part of the model; ' +
-      'if the model is genuinely fine but extremely thin/soft, see PivotTolerance in [SOLVERPARAMS])', [1]);
-
-  for j := 2 to FNeq do
+  // Every equation goes through the same pivot test below, including the first
+  // and any column with no off-diagonal entries (nothing to eliminate there, but
+  // its diagonal is still its pivot and must be valid).
+  for j := 1 to FNeq do
   begin
     first_j := ColFirstRow(j);
-    if first_j > j - 1 then Continue; // no off-diagonal entries stored above this diagonal
+    dk := FAA[FMaxa[j]];
 
-    for i := first_j to j - 1 do
+    if first_j <= j - 1 then
     begin
-      first_i := ColFirstRow(i);
-      kl := first_i;
-      if first_j > kl then kl := first_j;
-      addr_ij := FMaxa[j] + (j - i);
-      c := FAA[addr_ij];
-      for k := kl to i - 1 do
-        c := c - (FAA[FMaxa[i] + (i - k)] / FAA[FMaxa[k]]) * FAA[FMaxa[j] + (j - k)];
-      FAA[addr_ij] := c;
+      for i := first_j to j - 1 do
+      begin
+        first_i := ColFirstRow(i);
+        kl := first_i;
+        if first_j > kl then kl := first_j;
+        addr_ij := FMaxa[j] + (j - i);
+        c := FAA[addr_ij];
+        for k := kl to i - 1 do
+          c := c - (FAA[FMaxa[i] + (i - k)] / FAA[FMaxa[k]]) * FAA[FMaxa[j] + (j - k)];
+        FAA[addr_ij] := c;
+      end;
+
+      for i := first_j to j - 1 do
+        dk := dk - Sqr(FAA[FMaxa[j] + (j - i)]) / FAA[FMaxa[i]];
     end;
 
-    dk := FAA[FMaxa[j]];
-    for i := first_j to j - 1 do
-      dk := dk - Sqr(FAA[FMaxa[j] + (j - i)]) / FAA[FMaxa[i]];
-
-    if Abs(dk) < relTol then
+    // A stiffness matrix with valid constraints is symmetric POSITIVE definite,
+    // so every pivot must be strictly positive. Near zero = a mechanism (rigid-body
+    // motion or a disconnected part). Clearly negative = an indefinite matrix, which
+    // no valid linear-elastic model produces; carrying on would "solve" it into
+    // plausible-looking but meaningless displacements.
+    if dk < -relTol then
+      raise Exception.CreateFmt(
+        'System is not positive definite: negative pivot (%g) at equation %d ' +
+        '(an indefinite stiffness matrix -- check for an unstable structure or an inverted or ' +
+        'malformed element)', [dk, j]);
+    if dk < relTol then
       raise Exception.CreateFmt(
         'Singular or near-singular system: zero pivot at equation %d ' +
         '(check for unconstrained rigid-body motion or a disconnected part of the model; ' +

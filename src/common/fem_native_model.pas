@@ -5,7 +5,7 @@ unit fem_native_model;
 interface
 
 uses
-  fem_types, SysUtils, Classes;
+  fem_types, fem_fingerprint, SysUtils, Classes;
 
 // Loads and parses a model from any stream (file, stdin, ...) in the
 // compact native format (see docs/native_format.md) into a TModel.
@@ -76,6 +76,20 @@ begin
     Arg := '';
   end;
   Result := True;
+end;
+
+// Fingerprint of everything in the (already slurped) model stream; see fem_fingerprint.
+function StreamFingerprint(MS: TMemoryStream): string;
+var
+  Raw: TBytes;
+begin
+  SetLength(Raw, MS.Size);
+  if MS.Size > 0 then
+  begin
+    MS.Position := 0;
+    MS.ReadBuffer(Raw[0], MS.Size);
+  end;
+  Result := ModelFingerprint(Raw);
 end;
 
 function LoadModelFromStream(Stream: TStream): TModel;
@@ -162,6 +176,8 @@ begin
           n := Stream.Read(sbuf, SizeOf(sbuf));
           if n > 0 then MemStream.WriteBuffer(sbuf, n);
         until n <= 0;
+        MemStream.Position := 0;
+        Result.Fingerprint := StreamFingerprint(MemStream);
         MemStream.Position := 0;
         SL.LoadFromStream(MemStream);
       finally

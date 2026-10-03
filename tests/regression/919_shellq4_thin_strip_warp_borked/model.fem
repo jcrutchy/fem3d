@@ -1,0 +1,49 @@
+# FreePascal FEM Suite - native model format
+[HEADER]
+Solver=linstatic
+Units=SI (N, m, Pa)
+
+[NODES]
+# id, x, y, z -- a 1 m x 10 mm strip with node 3 lifted 2 mm out of the plane
+# through nodes 1, 2, 4: only 0.2% of the strip's LENGTH (so it slipped under a
+# tolerance measured against the longer edge) but 20% of its WIDTH, i.e. a badly
+# twisted element
+1, 0, 0, 0
+2, 1, 0, 0
+3, 1, 0.01, 0.002
+4, 0, 0.01, 0
+
+[MATERIALS]
+# id, E, nu, rho
+1, 200000000000, 0.3, -
+
+[PROPERTIES]
+# id, type, material, thickness
+1, shellq4, 1, 0.005
+
+[ELEMENTS]
+# id, type, node1..node4, property
+1, shellq4, 1, 2, 3, 4, 1
+
+[FREEDOMCASE default]
+# node, dof, value
+1, x, 0
+1, y, 0
+1, z, 0
+1, rx, 0
+1, ry, 0
+1, rz, 0
+4, x, 0
+4, y, 0
+4, z, 0
+4, rx, 0
+4, ry, 0
+4, rz, 0
+
+[LOADCASE default]
+# node, dof, value
+2, z, -10
+
+[SOLVERPARAMS]
+Tolerance=1E-9
+Verbose=0

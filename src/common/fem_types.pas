@@ -133,6 +133,7 @@ type
   TCombinationArray = array of TCombination;
 
   TModel = record
+    Fingerprint: string;   // SHA-256 of the model file's canonical text (see fem_fingerprint)
     SolverName: string;
     Units: string;
     Nodes: TNodeArray;

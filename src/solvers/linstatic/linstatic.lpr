@@ -311,6 +311,10 @@ begin
   WriteLn(OutF, Format('# model=%s', [ModelFile]));
   WriteLn(OutF, Format('# nodes=%d elements=%d freedom_cases=%d load_cases=%d combinations=%d',
     [NumNodes, Length(Model.Elements), Length(Model.FreedomCases), Length(Model.LoadCases), Length(Model.Combinations)]));
+  // Ties these results to the exact model they were computed from; a viewer
+  // recomputes it from the model file it is shown and flags any difference.
+  // (Printed even with Verbose=0: it is data, not narration.)
+  WriteLn(OutF, 'MODEL.FINGERPRINT=' + Model.Fingerprint);
 
   if Model.SolverParams.Verbose then
   begin
