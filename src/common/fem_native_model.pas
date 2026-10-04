@@ -59,12 +59,20 @@ end;
 function ParseSectionHeader(const Line: string; out Name, Arg: string): Boolean;
 var
   inner: string;
-  sp: Integer;
+  sp, k: Integer;
 begin
   Result := False;
   if (Length(Line) < 2) or (Line[1] <> '[') or (Line[Length(Line)] <> ']') then Exit;
   inner := Trim(Copy(Line, 2, Length(Line) - 2));
-  sp := Pos(' ', inner);
+  // The name ends at the first space OR tab: a header typed as
+  // "[LOADCASE<tab>LC1]" must parse the same as "[LOADCASE LC1]".
+  sp := 0;
+  for k := 1 to Length(inner) do
+    if (inner[k] = ' ') or (inner[k] = #9) then
+    begin
+      sp := k;
+      Break;
+    end;
   if sp > 0 then
   begin
     Name := UpperCase(Trim(Copy(inner, 1, sp - 1)));
@@ -195,6 +203,22 @@ begin
       begin
         secName := hdrName;
         secArg := hdrArg;
+        // A header we don't recognise used to be skipped along with every
+        // line under it -- so a typo like [LOADCASES x] silently dropped a
+        // whole load case and the solver reported a clean zero result.
+        // Fail loudly instead, naming the line and the valid section names.
+        if (secName <> 'HEADER') and (secName <> 'NODES') and (secName <> 'MATERIALS') and
+           (secName <> 'PROPERTIES') and (secName <> 'ELEMENTS') and (secName <> 'FREEDOMCASE') and
+           (secName <> 'LOADCASE') and (secName <> 'COMBINATION') and (secName <> 'SOLVERPARAMS') then
+          raise Exception.CreateFmt('line %d: unknown section [%s] -- valid sections are HEADER, NODES, ' +
+            'MATERIALS, PROPERTIES, ELEMENTS, FREEDOMCASE <id>, LOADCASE <id>, COMBINATION <id>, SOLVERPARAMS',
+            [i + 1, hdrName]);
+        if ((secName = 'FREEDOMCASE') or (secName = 'LOADCASE') or (secName = 'COMBINATION')) and (secArg = '') then
+          raise Exception.CreateFmt('line %d: section [%s] needs a name, e.g. [%s default]',
+            [i + 1, secName, secName]);
+        if (secArg <> '') and (secName <> 'FREEDOMCASE') and (secName <> 'LOADCASE') and (secName <> 'COMBINATION') then
+          raise Exception.CreateFmt('line %d: section [%s] does not take a name (got "%s")',
+            [i + 1, secName, secArg]);
         if secName = 'FREEDOMCASE' then
         begin
           fcIdx := Length(Result.FreedomCases);
@@ -223,6 +247,8 @@ begin
       end;
 
       // --- data line: dispatch on current section ---
+      if secName = '' then
+        raise Exception.CreateFmt('line %d: data before the first [SECTION] header: "%s"', [i + 1, line]);
       if secName = 'HEADER' then
       begin
         eqPos := Pos('=', line);
@@ -231,8 +257,13 @@ begin
           key := UpperCase(Trim(Copy(line, 1, eqPos - 1)));
           valStr := Trim(Copy(line, eqPos + 1, Length(line)));
           if key = 'SOLVER' then Result.SolverName := valStr
-          else if key = 'UNITS' then Result.Units := valStr;
-        end;
+          else if key = 'UNITS' then Result.Units := valStr
+          else
+            raise Exception.CreateFmt('line %d, [HEADER]: unknown key "%s" -- valid keys are Solver, Units',
+              [i + 1, Trim(Copy(line, 1, eqPos - 1))]);
+        end
+        else
+          raise Exception.CreateFmt('line %d, [HEADER]: expected key=value, got "%s"', [i + 1, line]);
       end
 
       else if secName = 'NODES' then
@@ -379,8 +410,13 @@ begin
                 raise Exception.CreateFmt('line %d, [COMBINATION]: Terms factor for load case "%s" must be a number, got "%s"',
                   [i + 1, key, valStr]);
             end;
-          end;
-        end;
+          end
+          else
+            raise Exception.CreateFmt('line %d, [COMBINATION]: unknown key "%s" -- valid keys are FreedomCase, Terms',
+              [i + 1, Trim(Copy(line, 1, eqPos - 1))]);
+        end
+        else
+          raise Exception.CreateFmt('line %d, [COMBINATION]: expected key=value, got "%s"', [i + 1, line]);
       end
 
       else if secName = 'SOLVERPARAMS' then
@@ -440,8 +476,14 @@ begin
             else
               raise Exception.CreateFmt('line %d, [SOLVERPARAMS]: Verbose must be 0/1 or false/true, got "%s"',
                 [i + 1, valStr]);
-          end;
-        end;
+          end
+          else
+            raise Exception.CreateFmt('line %d, [SOLVERPARAMS]: unknown key "%s" -- valid keys are Tolerance, ' +
+              'PivotTolerance, BeamDivisions, ElementResults, ResultsFile, Verbose',
+              [i + 1, Trim(Copy(line, 1, eqPos - 1))]);
+        end
+        else
+          raise Exception.CreateFmt('line %d, [SOLVERPARAMS]: expected key=value, got "%s"', [i + 1, line]);
       end;
     end;
   finally
@@ -496,5 +538,15 @@ begin
     HS.Free;
   end;
 end;
+
+// GFS is a unit-level variable, zero-initialised by the compiler (so
+// DecimalSeparator would be #0) until the routine that uses it assigns it.
+// Set it once at unit start-up as well, so no routine can ever see an
+// unconfigured copy -- and so a comma-decimal locale (many European
+// Windows installs) can never leak into the model format, which is
+// always '.'-decimal.
+initialization
+  GFS := DefaultFormatSettings;
+  GFS.DecimalSeparator := '.';
 
 end.

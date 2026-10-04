@@ -74,13 +74,23 @@ function FormanRate(DeltaK, R, C, N, Kc: Double): Double;
 //   A2 = 1 - A0 - A1 - A3
 //   f = max(R, A0 + A1*R + A2*R^2 + A3*R^3)   for R >= 0
 //   f = A0 + A1*R                              for -2 <= R < 0
-// where S = SmaxOverSigma0.
+//   f = A0 - 2*A1                              for R < -2
+// where S = SmaxOverSigma0. Below R = -2 the opening ratio is held at its
+// R = -2 value (the NASGRO truncation) rather than extrapolated or
+// rejected: R < -2 happens routinely in flight spectra (ground-air-ground
+// cycles, gust and landing loads), and an exception there would abort a
+// cycle-by-cycle integration. NOTE this R < -2 branch is from memory of
+// the NASGRO documentation -- confirm against the manual with the rest of
+// the closure form (see crackgrowth/docs/TODO.md).
 function NewmanClosureF(R, SmaxOverSigma0, Alpha: Double): Double;
 
 // da/dN = C * (((1-f)/(1-R)) * DeltaK)^N * (1-DeltaKth/DeltaK)^P
 //           / (1-Kmax/Kc)^Q
 // Returns 0 (no growth, not an error) when DeltaK <= DeltaKth -- below
 // threshold is a normal, expected physical state, not a failure.
+// Also returns 0 when Kmax <= 0: a fully compressive cycle never opens
+// the crack, so it cannot grow it (linear elastic fracture mechanics has
+// no tensile stress intensity to drive growth).
 // Raises an exception if Kmax >= Kc -- at or beyond fracture toughness,
 // same "already failed, don't report a number" reasoning as Forman.
 function NasgroRate(DeltaK, Kmax, R: Double; const Mat: TCrackGrowthMaterial): Double;
@@ -181,7 +191,7 @@ begin
   else if R >= -2 then
     Result := A0 + A1 * R
   else
-    raise Exception.CreateFmt('NewmanClosureF: R must be >= -2, got %g', [R]);
+    Result := A0 - 2 * A1; // R < -2: truncate at the R = -2 value (continuous there)
 end;
 
 function NasgroRate(DeltaK, Kmax, R: Double; const Mat: TCrackGrowthMaterial): Double;
@@ -190,6 +200,11 @@ var
 begin
   if not Mat.HasNasgro then
     raise Exception.CreateFmt('NasgroRate: material "%s" has no NASGRO constants', [Mat.Name]);
+  if Kmax <= 0 then
+  begin
+    Result := 0.0; // fully compressive cycle: crack stays closed, no growth
+    Exit;
+  end;
   if DeltaK <= 0 then
     raise Exception.CreateFmt('NasgroRate: DeltaK must be positive, got %g', [DeltaK]);
   if Kmax >= Mat.NasgroKc then
@@ -223,6 +238,18 @@ begin
     / Power(toughnessDenom, Mat.NasgroQ);
 end;
 
+// Law BestAvailableRate would pick (NASGRO > Forman > Walker > Paris);
+// used to give LawUsed a meaningful value on a zero-growth cycle.
+function PreferredLaw(const Mat: TCrackGrowthMaterial; const Caller: string): TGrowthLaw;
+begin
+  if Mat.HasNasgro then Result := glNasgro
+  else if Mat.HasForman then Result := glForman
+  else if Mat.HasWalker then Result := glWalker
+  else if Mat.HasParis then Result := glParis
+  else
+    raise Exception.CreateFmt('%s: material "%s" has no usable growth law', [Caller, Mat.Name]);
+end;
+
 function ConservativeRate(DeltaK, Kmax, R: Double; const Mat: TCrackGrowthMaterial;
   out LawUsed: TGrowthLaw): Double;
 var
@@ -231,6 +258,13 @@ var
 begin
   Result := 0;
   haveAny := False;
+
+  // Fully compressive cycle (Kmax <= 0): no law grows a closed crack.
+  if Kmax <= 0 then
+  begin
+    LawUsed := PreferredLaw(Mat, 'ConservativeRate');
+    Exit;
+  end;
 
   if Mat.HasParis then
   begin
@@ -264,6 +298,13 @@ end;
 function BestAvailableRate(DeltaK, Kmax, R: Double; const Mat: TCrackGrowthMaterial;
   out LawUsed: TGrowthLaw): Double;
 begin
+  // Fully compressive cycle (Kmax <= 0): no law grows a closed crack.
+  if Kmax <= 0 then
+  begin
+    LawUsed := PreferredLaw(Mat, 'BestAvailableRate');
+    Result := 0.0;
+    Exit;
+  end;
   if Mat.HasNasgro then
   begin
     LawUsed := glNasgro;

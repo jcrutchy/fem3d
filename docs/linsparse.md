@@ -64,14 +64,40 @@ the cap, with a clear error naming what happened. See case 907 in
 rejected with this fallback active.
 
 **Verified fixed**, not just patched: the previously-failing 1,500-bay
-chain now converges in 9,494 iterations (a real diagonal shift was
-needed there); the medium test case that also broke down converges in
+chain converged in 9,494 iterations (a real diagonal shift was
+needed there) -- but see "True-residual verification" below: that
+"convergence" was judged by the iteration's running residual estimate, and
+the real residual of that solve is only about 1E-5, so at the default
+Tolerance of 1E-9 the chain is now (correctly) reported as not reaching it; the medium test case that also broke down converges in
 66 iterations (fewer than plain Jacobi's 372, since IC(0) is a
 genuinely stronger preconditioner whenever it doesn't need shifting).
 Every regression case that used to run under Jacobi still passes.
 
 `FEM_DEBUG=1` reports the iteration count and, when relevant, the shift
 that was needed.
+
+## True-residual verification
+
+The PCG loop tests the *recursively updated* residual `r_k = r_(k-1) -
+alpha*A*p`. In floating point that running estimate slowly drifts away from
+the real residual `b - A*x_k`, most on ill-conditioned models that need
+thousands of iterations. So when the running estimate first meets
+`Tolerance`, `PCGSolve` recomputes `b - A*x` with one extra matvec and
+accepts the answer only if the **true** residual also meets it. If not, it
+replaces `r` with the true residual, restarts the search direction, and
+carries on (at most 5 restarts), after which it fails with exit code 4 and
+a message giving the true residual it could reach. The verbose output
+reports the checked true residual for every solve (and any restarts).
+
+Why this matters, measured: a 200-bay slender truss cantilever at
+`Tolerance=1E-12` used to report convergence while the true relative
+residual was about 5E-9 (tip displacement off from `linstatic`'s direct
+solution in the 8th digit). It is now rejected (regression case 922), and
+at a reachable tolerance it matches `linstatic` (case 034). A 1,500-bay
+version has a true-residual floor near 1E-5 that no restart can beat; the
+old code silently returned an answer about 0.012% off while claiming 1E-9.
+When you see this error, either loosen `Tolerance` to what the model can
+support or use `linstatic`, which has no such floor.
 
 ## Threading — implemented correctly, but not validatable in this environment
 

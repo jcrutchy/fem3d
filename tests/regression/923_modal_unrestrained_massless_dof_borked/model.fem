@@ -1,0 +1,37 @@
+# FreePascal FEM Suite - native model format
+[HEADER]
+Solver=modal
+Units=SI (N, m, Pa, kg)
+
+[NODES]
+# id, x, y, z
+1, 0, 0, 0
+2, 1, 0, 0
+3, 2, 0, 0
+4, 5, 5, 5
+
+[MATERIALS]
+# id, E, nu, rho
+1, 210000000000, 0.3, 7850
+
+[PROPERTIES]
+# id, type, material, area[, Iy, Iz, J]
+# Iz = 4*Iy so the two bending directions have different frequencies (no degenerate pair).
+1, beam, 1, 0.0001, 8.333E-10, 3.333E-9, 1.4E-9
+
+[ELEMENTS]
+# id, type, node1, node2, property[, refX, refY, refZ]
+1, beam, 1, 2, 1
+2, beam, 2, 3, 1
+
+[FREEDOMCASE default]
+# node, dof, value  (only node 1 is clamped: every rotation at nodes 2 and 3 is FREE)
+1, x, 0
+1, y, 0
+1, z, 0
+1, rx, 0
+1, ry, 0
+1, rz, 0
+
+[SOLVERPARAMS]
+Tolerance=1E-9

@@ -134,3 +134,16 @@ published worked example with known inputs and outputs.
 - No CLI solver tool, no verbose output, no `fem_regress`-style
   regression cases yet — all follow once there's an actual problem this
   module can solve end to end.
+
+## Closure-model edge cases (2026-10, external-review hardening)
+
+- `NewmanClosureF` no longer raises for `R < -2`: the opening ratio is held
+  at its `R = -2` value (`f = A0 - 2*A1`), so a spectrum with deep
+  compressive excursions (ground-air-ground, gust, landing) integrates
+  instead of aborting. **That branch is written from memory of the NASGRO
+  documentation -- confirm it against the actual manual along with the rest
+  of the closure form** (same open item as above).
+- `NasgroRate`, `ConservativeRate` and `BestAvailableRate` return zero
+  growth when `Kmax <= 0` (a fully compressive cycle never opens the
+  crack). The K-solution/spectrum layer must still decide what `Kmax`
+  means for a cycle that is compressive at the crack tip.

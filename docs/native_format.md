@@ -65,7 +65,17 @@ ResultsFile=results.txt
   (name, one space, an id) for a repeatable named section
   (`FREEDOMCASE`, `LOADCASE`, `COMBINATION`) — one such section per
   freedom case / load case / combination, `arg` becomes that case's `id`.
-  Section names are case-insensitive.
+  Section names are case-insensitive. The name ends at the first space
+  **or tab**, so `[LOADCASE<tab>LC1]` parses the same as `[LOADCASE LC1]`.
+- **Unknown or malformed input is an error, not ignored.** An unrecognised
+  section name (for example `[LOADCASES x]`), a named section with no name
+  (`[LOADCASE]`), a name on a singleton section (`[NODES x]`), a data line
+  before the first section header, a line without `=` in a `key=value`
+  section, and an unknown key in `[HEADER]`, `[COMBINATION]` or
+  `[SOLVERPARAMS]` (for example `Toleranse=`) all stop the load with the
+  line number and the list of valid names. Earlier versions skipped these
+  silently, so a typo could drop a whole load case and still report a
+  clean zero result.
 - **Data rows**: comma-separated fields, whitespace around each field
   trimmed, under whichever section header precedes them. `NODES`,
   `MATERIALS`, `PROPERTIES`, `ELEMENTS`, and the body of each

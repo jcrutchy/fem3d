@@ -184,7 +184,7 @@ independently cross-checked one). Every tutorial's model is a real
 - `tests/regression/` — `fem_regress` manifest-driven cases with
   SHA-256-protected models and hand-verified (or, where hand calculation
   isn't possible, independently cross-checked) expected values. See
-  `docs/regression_testing.md`. Cases run in name order, so the report is the same on every machine. 52 cases, split roughly evenly between
+  `docs/regression_testing.md`. Cases run in name order, so the report is the same on every machine. 58 cases, split roughly evenly between
   VERIFIED (truss, beam, moment frames including a statically-
   indeterminate portal frame cross-checked against NumPy, modal,
   shellq4/shellq8 membrane patch tests, load-case combinations,
@@ -330,5 +330,8 @@ independently cross-checked one). Every tutorial's model is a real
       too coarse in practice
 - [ ] Adaptors for other ASCII formats (Strand7 `.txt` first candidate;
       see `docs/adaptors.md` — low priority for now, not started)
-- [ ] Rotary inertia for beam elements, so `modal` can handle a beam's
-      rotational dofs when they're free rather than requiring them fixed
+- [x] `modal` on beam frames with free rotations: the massless rotational
+      dofs are eliminated exactly by static condensation (no longer
+      required to be fixed). Regression case 035, cross-checked against an
+      independent NumPy reference (~1e-15). Not done: genuine rotary
+      inertia (so no pure torsional modes); see `docs/modal.md`

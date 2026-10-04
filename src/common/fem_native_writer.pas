@@ -188,4 +188,14 @@ begin
   end;
 end;
 
+// GFS is a unit-level variable, zero-initialised by the compiler (so
+// DecimalSeparator would be #0) until the routine that uses it assigns it.
+// Set it once at unit start-up as well, so no routine can ever see an
+// unconfigured copy -- and so a comma-decimal locale (many European
+// Windows installs) can never leak into the model format, which is
+// always '.'-decimal.
+initialization
+  GFS := DefaultFormatSettings;
+  GFS.DecimalSeparator := '.';
+
 end.

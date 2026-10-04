@@ -197,6 +197,29 @@ const
 // unshifted IC(0) factorization worked outright) -- exposed so a caller
 // can log it (see linsparse's FEM_DEBUG output) when diagnosing a model
 // that needed the fallback.
+//
+// TRUE-RESIDUAL VERIFICATION. The loop tests the *recursively updated*
+// residual r_k = r_{k-1} - alpha*A*p, which in floating point slowly drifts
+// away from the real residual b - A*x_k (worst on ill-conditioned models
+// that need thousands of iterations). So when the recursive residual first
+// meets the tolerance, PCGSolve recomputes b - A*x with one extra matvec
+// and only accepts the answer if the TRUE residual also meets it. If not,
+// it replaces r with the true residual, restarts the search direction, and
+// carries on (at most PCGMaxRestarts times, then it raises -- an honest
+// failure rather than a "converged" answer that isn't). What it found is
+// left in PCGLastDiagnostics for the caller to report.
+type
+  TPCGDiagnostics = record
+    TrueRelResidual: Double;  // ||b - A*x|| / ||b|| of the returned x
+    Restarts: Integer;        // times the recursion had drifted and was restarted
+  end;
+
+const
+  PCGMaxRestarts = 5;
+
+var
+  PCGLastDiagnostics: TPCGDiagnostics;
+
 function PCGSolve(const ED: TElementDataArray; const b: TDoubleArray;
   NEQ: Integer; Tolerance: Double; NumThreads: Integer;
   out Iterations: Integer; out ICShiftUsed: Double; UseSpinSync: Boolean = False): TDoubleArray;
@@ -823,11 +846,24 @@ var
   Pat: TCSRPattern;
   KValues, ICValues: TDoubleArray;
   x, r, z, p, Ap, wy: TDoubleArray;   // wy: scratch for the IC solve
-  i, iter, maxIter: Integer;
-  rz, rzNew, pAp, alpha, beta, bnorm: Double;
+  i, iter, maxIter, restarts: Integer;
+  rz, rzNew, pAp, alpha, beta, bnorm, trueNorm: Double;
   Pool: TWorkerPool;
   SpinPool: TSpinWorkerPool;
+
+  // w = Kff * v, through whichever worker pool this solve was set up with.
+  procedure MatVec(const v: TDoubleArray; var w: TDoubleArray);
+  begin
+    if UseSpinSync then
+      ParallelMatVecSpinInto(ED, v, NEQ, SpinPool, w)
+    else
+      ParallelMatVecInto(ED, v, NEQ, Pool, w);
+  end;
+
 begin
+  PCGLastDiagnostics.TrueRelResidual := 0.0;
+  PCGLastDiagnostics.Restarts := 0;
+
   Pat := BuildCSRPattern(ED, NEQ);
   KValues := AssembleCSRValues(ED, Pat, NEQ);
   ICValues := BuildIC0WithFallback(Pat, KValues, NEQ, ICShiftUsed);
@@ -846,9 +882,6 @@ begin
   SetLength(Ap, NEQ + 1);
   SetLength(wy, NEQ + 1);
   SetLength(z, NEQ + 1);
-  ICApply(Pat, ICValues, r, NEQ, wy, z);
-  for i := 1 to NEQ do
-    p[i] := z[i];
 
   bnorm := VecNorm(b, NEQ);
   if bnorm = 0.0 then
@@ -858,80 +891,81 @@ begin
     Exit;
   end;
 
+  ICApply(Pat, ICValues, r, NEQ, wy, z);
+  for i := 1 to NEQ do
+    p[i] := z[i];
   rz := VecDot(r, z, NEQ);
   maxIter := Max(500, 10 * NEQ);
+  restarts := 0;
 
+  SetLength(Pool, 0);
+  SetLength(SpinPool, 0);
   if UseSpinSync then
-  begin
-    SpinPool := CreateSpinWorkerPool(ED, NEQ, NumThreads);
-    try
-      for iter := 1 to maxIter do
-      begin
-        ParallelMatVecSpinInto(ED, p, NEQ, SpinPool, Ap);
-        pAp := VecDot(p, Ap, NEQ);
-        if pAp <= 0 then
-          raise Exception.CreateFmt(
-            'PCG: search direction is non-positive-definite at iteration %d -- system is not positive ' +
-            'definite (check for a mechanism or disconnected part of the model)', [iter]);
-        alpha := rz / pAp;
-        for i := 1 to NEQ do
-        begin
-          x[i] := x[i] + alpha * p[i];
-          r[i] := r[i] - alpha * Ap[i];
-        end;
-        if VecNorm(r, NEQ) <= Tolerance * bnorm then
-        begin
-          Iterations := iter;
-          Result := x;
-          Exit;
-        end;
-        ICApply(Pat, ICValues, r, NEQ, wy, z);
-        rzNew := VecDot(r, z, NEQ);
-        beta := rzNew / rz;
-        for i := 1 to NEQ do
-          p[i] := z[i] + beta * p[i];
-        rz := rzNew;
-      end;
-      raise Exception.CreateFmt('PCG did not converge within %d iterations (tolerance %.3e)', [maxIter, Tolerance]);
-    finally
-      FreeSpinWorkerPool(SpinPool);
-    end;
-  end
+    SpinPool := CreateSpinWorkerPool(ED, NEQ, NumThreads)
   else
-  begin
     Pool := CreateWorkerPool(ED, NEQ, NumThreads);
-    try
-      for iter := 1 to maxIter do
+  try
+    for iter := 1 to maxIter do
+    begin
+      MatVec(p, Ap);
+      pAp := VecDot(p, Ap, NEQ);
+      if pAp <= 0 then
+        raise Exception.CreateFmt(
+          'PCG: search direction is non-positive-definite at iteration %d -- system is not positive ' +
+          'definite (check for a mechanism or disconnected part of the model)', [iter]);
+      alpha := rz / pAp;
+      for i := 1 to NEQ do
       begin
-        ParallelMatVecInto(ED, p, NEQ, Pool, Ap);
-        pAp := VecDot(p, Ap, NEQ);
-        if pAp <= 0 then
-          raise Exception.CreateFmt(
-            'PCG: search direction is non-positive-definite at iteration %d -- system is not positive ' +
-            'definite (check for a mechanism or disconnected part of the model)', [iter]);
-        alpha := rz / pAp;
+        x[i] := x[i] + alpha * p[i];
+        r[i] := r[i] - alpha * Ap[i];
+      end;
+
+      if VecNorm(r, NEQ) <= Tolerance * bnorm then
+      begin
+        // The recursive residual says "converged". Check it against the real
+        // one, b - A*x (Ap is free to reuse: this iteration's update is done).
+        MatVec(x, Ap);
         for i := 1 to NEQ do
-        begin
-          x[i] := x[i] + alpha * p[i];
-          r[i] := r[i] - alpha * Ap[i];
-        end;
-        if VecNorm(r, NEQ) <= Tolerance * bnorm then
+          wy[i] := b[i] - Ap[i];
+        trueNorm := VecNorm(wy, NEQ);
+        if trueNorm <= Tolerance * bnorm then
         begin
           Iterations := iter;
+          PCGLastDiagnostics.TrueRelResidual := trueNorm / bnorm;
+          PCGLastDiagnostics.Restarts := restarts;
           Result := x;
           Exit;
         end;
-        ICApply(Pat, ICValues, r, NEQ, wy, z);
-        rzNew := VecDot(r, z, NEQ);
-        beta := rzNew / rz;
+        // Drifted: the recursion thought it had converged and it hadn't.
+        Inc(restarts);
+        if restarts > PCGMaxRestarts then
+          raise Exception.CreateFmt(
+            'PCG: the iteration reports convergence but the true residual ||b-Ax||/||b|| = %.3e is still ' +
+            'above the requested tolerance %.3e after %d restarts at iteration %d -- the model is too ' +
+            'ill-conditioned for this Tolerance (loosen Tolerance, or use linstatic)',
+            [trueNorm / bnorm, Tolerance, PCGMaxRestarts, iter]);
         for i := 1 to NEQ do
-          p[i] := z[i] + beta * p[i];
-        rz := rzNew;
+          r[i] := wy[i];                 // replace the drifted residual with the true one
+        ICApply(Pat, ICValues, r, NEQ, wy, z);
+        for i := 1 to NEQ do
+          p[i] := z[i];                  // restart the search direction
+        rz := VecDot(r, z, NEQ);
+        Continue;
       end;
-      raise Exception.CreateFmt('PCG did not converge within %d iterations (tolerance %.3e)', [maxIter, Tolerance]);
-    finally
-      FreeWorkerPool(Pool);
+
+      ICApply(Pat, ICValues, r, NEQ, wy, z);
+      rzNew := VecDot(r, z, NEQ);
+      beta := rzNew / rz;
+      for i := 1 to NEQ do
+        p[i] := z[i] + beta * p[i];
+      rz := rzNew;
     end;
+    raise Exception.CreateFmt('PCG did not converge within %d iterations (tolerance %.3e)', [maxIter, Tolerance]);
+  finally
+    if UseSpinSync then
+      FreeSpinWorkerPool(SpinPool)
+    else
+      FreeWorkerPool(Pool);
   end;
 end;
 

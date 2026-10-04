@@ -14,22 +14,40 @@ adapt_x in.txt | modal -
 
 For each free dof, an equal-and-opposite half of each connected element's
 mass is lumped onto its two end nodes' **translational** dofs (`x`,`y`,`z`)
-only. This is exact enough for truss models (every mass-carrying dof is
-translational anyway) and fine for a beam model too, *as long as its
-rotational dofs end up fixed rather than free* -- proper rotary-inertia
-lumping for beams needs section data (radius of gyration or similar) this
-suite doesn't model yet, so a free rotational dof with no mass is refused
-outright (see "What it refuses" below) rather than silently given zero or
-approximate mass.
+only. No rotary inertia is modeled, so a beam's free rotational dofs have
+**zero mass**. They are *not* fixed and *not* refused: they are eliminated
+exactly by static condensation before the eigensolve.
 
-With M diagonal and positive on every free dof, the generalized
-eigenproblem `K*phi = omega^2*M*phi` reduces cleanly to a standard
-symmetric one (`Kmass = D^-1 K D^-1` where `D = diag(sqrt(M))`), which
-`fem_eigen`'s Jacobi solver handles directly, giving the full spectrum
-(all `NEQ` modes, ascending) at once -- there's no "how many modes do you
-want" flag, because for the dense, modest-sized systems this suite
-targets, computing all of them costs about the same as computing a few
-and is more honest about what's actually available.
+Split the free dofs into `t` (carry mass) and `r` (massless). Then
+`K*phi = omega^2*M*phi` with `M = [Mtt 0; 0 0]` is exactly equivalent to
+
+```
+(Ktt - Ktr * Krr^-1 * Krt) * phi_t = omega^2 * Mtt * phi_t
+phi_r = -Krr^-1 * Krt * phi_t
+```
+
+This is *not* an approximation (unlike Guyan reduction, which eliminates
+dofs that do carry mass): a dof with no inertia is slaved statically to
+the others, so the reduced problem has exactly the same eigenvalues as the
+full one. `Krr` is factored by a dense Cholesky; the massless-dof values of
+each mode shape are then recovered from `phi_t`. Verified against an
+independent NumPy reference that never forms the condensed matrix
+(regression case 035, agreement ~1e-15).
+
+With the condensed stiffness `Kc` and `Mtt` diagonal and positive, the
+problem reduces to a standard symmetric one (`Kmass = D^-1 Kc D^-1`, `D =
+diag(sqrt(Mtt))`), which `fem_eigen`'s Jacobi solver handles directly,
+giving the full spectrum (one mode per **massed** dof, ascending) at once
+-- there's no "how many modes do you want" flag, because for the dense,
+modest-sized systems this suite targets, computing all of them costs about
+the same as computing a few and is more honest about what's actually
+available.
+
+Consequence of having no rotary inertia: **torsion about a beam's own axis
+has no polar inertia**, so pure torsional vibration modes do not appear
+(the torsional dof is condensed out like any other rotation). Bending and
+axial modes are unaffected, and bending frequencies converge to the
+analytical values as the beam is meshed finer.
 
 ## Requirements beyond the shared validator
 
@@ -45,10 +63,14 @@ that split exists):
   it into the load vector); there's no equivalent for an eigenvalue
   extraction.
 
-And, discovered during mass assembly rather than up front: any free dof
-that ends up with zero lumped mass is refused by name (node + dof), not
-silently dropped or given a fudge value -- in practice this means "a beam
-model whose rotational dofs are free."
+And, discovered when the free dofs are split into massed and massless:
+
+- A model in which **no** free dof carries mass is refused (nothing can
+  vibrate -- usually a missing density or everything restrained).
+- A massless free dof that **no stiffness restrains** (for example a node
+  that no element touches, or a mechanism among the massless dofs) makes
+  `Krr` singular. It is refused by name (node + dof) instead of producing
+  NaN frequencies. Case 923 checks this.
 
 ## Freedom cases
 
@@ -91,8 +113,10 @@ semi-definite, which for a valid structure shouldn't happen).
   not suited to a large system (no sparsity exploited, unlike
   `linstatic`'s skyline solve). A sparse/iterative approach (subspace
   iteration, Lanczos) would be the natural upgrade if that ever matters.
-- No rotary inertia for beam elements (see above) -- a beam model only
-  works here if its rotational dofs are fixed.
+- No rotary inertia for beam elements (see above). Free rotations are
+  condensed out exactly, which is correct for the model as defined, but a
+  structure whose rotary inertia matters (a very stocky beam at high
+  frequency, or torsional modes) is not represented.
 - No mass matrix for `shellq4` or `shellq8` -- a model containing one is rejected
   outright (by element type, not silently mishandled) rather than run
   with a wrong or missing mass contribution.

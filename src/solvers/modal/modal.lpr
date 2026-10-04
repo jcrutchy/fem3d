@@ -44,11 +44,12 @@ begin
 end;
 
 // Lumped mass: half the element's total mass to each end node's 3
-// translational dofs. Rotational dofs get no mass contribution here --
-// proper rotary-inertia lumping for beams isn't implemented yet (it needs
-// section data this suite doesn't model), so a beam model only works with
-// this solver if its rotational dofs end up fixed rather than free; see
-// the check after assembly below, and docs/model_format.md.
+// translational dofs. Rotational dofs get no mass contribution here (no
+// rotary inertia is modeled). A free rotational dof therefore has zero
+// mass, which is handled EXACTLY -- not by fixing it -- by statically
+// condensing every massless free dof out of the eigenproblem before the
+// eigensolve; see the condensation block in the main program below and
+// docs/modal.md.
 procedure AddElementMass(const el: TElement);
 var
   prop: TProperty;
@@ -85,8 +86,18 @@ var
   eq_i, eq_j, gi, gj: Integer;
   Klocal: TElemMatrix;
   Kff: TDenseMatrix;
-  Dsqrt: TDoubleArray; // [1..NEQ], sqrt(mass) per free dof, D in Kmass = D^-1 Kff D^-1
-  Kmass: TDenseMatrix; // mass-normalized stiffness
+  Dsqrt: TDoubleArray; // [1..nT], sqrt(mass) per massed free dof, D in Kmass = D^-1 Kc D^-1
+  Kmass: TDenseMatrix; // mass-normalized (condensed) stiffness, nT x nT
+  // Static condensation of massless free dofs: the free dofs split into
+  // "t" (carry mass) and "r" (zero mass; e.g. beam rotations).
+  nT, nR: Integer;
+  tOfEq, rOfEq: array of Integer;      // [1..NEQ] -> index within t / r (0 if not in that set)
+  eqOfT, eqOfR: array of Integer;      // inverse maps
+  Ktt, Kxx, Xr: TDenseMatrix;           // Ktt (nT x nT); Kxx = Krr then its Cholesky factor; Xr = Krr^-1*Krt (nR x nT)
+  Krt: TDenseMatrix;                    // nR x nT
+  uT, uR: TDoubleArray;
+  cholSum, cholMaxDiag: Double;
+  kk: Integer;
   EigVals: TDoubleArray;
   EigVecs: TDenseMatrix;
   omega, freq: Double;
@@ -101,13 +112,29 @@ var
   nTruss, nBeam, nOtherType: Integer;
   otherTypeSuffix: string;
 
+// "dof "ry" at node 3" for a free equation number, for error messages.
+function EqLabel(eq: Integer): string;
+var
+  gi, j, base: Integer;
+begin
+  Result := Format('equation %d', [eq]);
+  for gi := 1 to DofMap.NDOF do
+    if DofMap.GlobalToEq[gi] = eq then
+      for j := 0 to High(Model.Nodes) do
+      begin
+        base := fem_dofmap.GlobalDof(DofMap, j, 0);
+        if (gi >= base) and (gi < base + DofMap.NodeDofCounts[j]) then
+          Result := Format('dof "%s" at node %d', [DofNames[gi - base], Model.Nodes[j].Id]);
+      end;
+end;
+
 procedure PrintConstraintsBlock(const FC: TFreedomCase; const DMap: TDofMap);
 var
   ii, jj, ggi, nConstrained: Integer;
 begin
   nConstrained := DMap.NDOF - DMap.NEQ;
   WriteLn(OutF, Format('# Freedom case "%s": %d node(s), %d degree(s) of freedom total, '
-    + '%d fixed, %d free -- modal analysis solves for as many modes as there are free dof.',
+    + '%d fixed, %d free -- modal analysis finds one mode per free dof that carries mass.',
     [FC.Id, Length(Model.Nodes), DMap.NDOF, nConstrained, DMap.NEQ]));
   if nConstrained = 0 then Exit;
   WriteLn(OutF, '#   Fixed dof (every constraint here is exactly zero -- modal only supports fixed, not prescribed-nonzero, checked above):');
@@ -264,9 +291,9 @@ begin
     WriteLn(OutF, '# stiffness matrix, reduces the generalized eigenproblem K*phi=omega^2*M*phi');
     WriteLn(OutF, '# to a standard symmetric one, and solves it with a Jacobi eigensolver --');
     WriteLn(OutF, '# exact for the discretized (lumped-mass) model, not an approximation of');
-    WriteLn(OutF, '# the solve itself. Rotary inertia isn''t modeled (see docs/modal.md), so');
-    WriteLn(OutF, '# every free rotational dof needs a beam element with mass on it, or an');
-    WriteLn(OutF, '# error is raised rather than silently returning a wrong answer.');
+    WriteLn(OutF, '# the solve itself. Rotary inertia isn''t modeled, so free rotational dof');
+    WriteLn(OutF, '# (zero mass) are eliminated exactly by static condensation first; see');
+    WriteLn(OutF, '# docs/modal.md.');
     WriteLn(OutF, Format('# %d material(s), %d propert(y/ies). Element types: %d truss, %d beam%s.',
       [Length(Model.Materials), Length(Model.Properties), nTruss, nBeam, otherTypeSuffix]));
     WriteLn(OutF, '# (Verbose=1 is the default; set Verbose=0 in [SOLVERPARAMS] for plain');
@@ -346,45 +373,145 @@ begin
       if DofMap.GlobalToEq[i] > 0 then
         massedDof[DofMap.GlobalToEq[i]] := MassLumped[i];
 
+    // ---- Split the free dofs: "t" carry mass, "r" are massless ----
+    // Lumped mass sits on translations only, so a beam's free rotations have
+    // zero mass. They still have stiffness and must NOT be fixed (that would
+    // change the structure). Because they carry no inertia, they can be
+    // eliminated EXACTLY (no approximation, unlike Guyan reduction of massed
+    // dofs): with K = [Ktt Ktr; Krt Krr] and M = [Mtt 0; 0 0],
+    //     K*phi = w^2*M*phi   <=>   (Ktt - Ktr*Krr^-1*Krt)*phi_t = w^2*Mtt*phi_t
+    // and the massless dofs follow statically: phi_r = -Krr^-1*Krt*phi_t.
+    SetLength(tOfEq, DofMap.NEQ + 1);
+    SetLength(rOfEq, DofMap.NEQ + 1);
+    SetLength(eqOfT, DofMap.NEQ + 1);
+    SetLength(eqOfR, DofMap.NEQ + 1);
+    nT := 0; nR := 0;
     for eq_i := 1 to DofMap.NEQ do
-      if massedDof[eq_i] <= 0 then
+      if massedDof[eq_i] > 0 then
       begin
-        // find which (node, dof) this free equation corresponds to, for an actionable error
-        for i := 1 to DofMap.NDOF do
-          if DofMap.GlobalToEq[i] = eq_i then
-          begin
-            for j := 0 to High(Model.Nodes) do
-              if fem_dofmap.GlobalDof(DofMap, j, 0) <= i then
-                if i < fem_dofmap.GlobalDof(DofMap, j, 0) + DofMap.NodeDofCounts[j] then
-                begin
-                  Fail(ExitInvalidModel, Format(
-                    'Freedom case "%s": free dof "%s" at node %d has zero lumped mass -- likely a rotational dof of a beam element ' +
-                    '(rotary inertia lumping for beams isn''t implemented yet). Either constrain that dof or ' +
-                    'avoid modal analysis on this model for now.',
-                    [FC.Id, DofNames[i - fem_dofmap.GlobalDof(DofMap, j, 0)], Model.Nodes[j].Id]));
-                end;
-            Break;
-          end;
+        Inc(nT); tOfEq[eq_i] := nT; rOfEq[eq_i] := 0; eqOfT[nT] := eq_i;
+      end
+      else
+      begin
+        Inc(nR); rOfEq[eq_i] := nR; tOfEq[eq_i] := 0; eqOfR[nR] := eq_i;
+      end;
+    if nT = 0 then
+      Fail(ExitInvalidModel, Format(
+        'Freedom case "%s": no free dof carries any mass, so there is nothing to vibrate -- check that every ' +
+        'material has a density (rho) and that the elements are not all fully restrained.', [FC.Id]));
+
+    if (nR > 0) and Model.SolverParams.Verbose then
+    begin
+      WriteLn(OutF, Format('# %d of the %d free dof carry no mass (rotations -- rotary inertia is not modeled). They are', [nR, DofMap.NEQ]));
+      WriteLn(OutF, '# eliminated exactly by static condensation, K_c = K_tt - K_tr*K_rr^-1*K_rt, before the');
+      WriteLn(OutF, Format('# eigensolve (%d mode(s) result, one per massed dof); their mode-shape values are then', [nT]));
+      WriteLn(OutF, '# recovered as phi_r = -K_rr^-1*K_rt*phi_t. Not an approximation: a dof with no inertia');
+      WriteLn(OutF, '# is slaved statically to the others. (Torsion about a beam''s axis has no polar inertia');
+      WriteLn(OutF, '# here either, so pure torsional vibration modes do not appear.)');
+    end;
+
+    // Partition the dense free-free stiffness.
+    Ktt := NewDenseMatrix(nT);
+    for i := 1 to nT do
+      for j := 1 to nT do
+        Ktt[i][j] := Kff[eqOfT[i]][eqOfT[j]];
+
+    if nR > 0 then
+    begin
+      Kxx := NewDenseMatrix(nR);             // Krr, overwritten by its Cholesky factor
+      SetLength(Krt, nR + 1);
+      SetLength(Xr, nR + 1);
+      for i := 1 to nR do
+      begin
+        SetLength(Krt[i], nT + 1);
+        SetLength(Xr[i], nT + 1);
+        for j := 1 to nT do
+          Krt[i][j] := Kff[eqOfR[i]][eqOfT[j]];
+        for j := 1 to nR do
+          Kxx[i][j] := Kff[eqOfR[i]][eqOfR[j]];
       end;
 
-    // ---- Reduce to a standard symmetric eigenproblem: Kmass = D^-1 Kff D^-1, D=diag(sqrt(M)) ----
-    SetLength(Dsqrt, DofMap.NEQ + 1);
-    for i := 1 to DofMap.NEQ do
-      Dsqrt[i] := Sqrt(massedDof[i]);
-    Kmass := NewDenseMatrix(DofMap.NEQ);
-    for i := 1 to DofMap.NEQ do
-      for j := 1 to DofMap.NEQ do
-        Kmass[i][j] := Kff[i][j] / (Dsqrt[i] * Dsqrt[j]);
+      // Cholesky Krr = L*L^T (lower triangle of Kxx). Krr is symmetric
+      // positive definite unless some massless dof is not restrained by
+      // stiffness (a mechanism): then a pivot collapses -- reported by name.
+      cholMaxDiag := 0.0;
+      for i := 1 to nR do
+        if Kxx[i][i] > cholMaxDiag then cholMaxDiag := Kxx[i][i];
+      for j := 1 to nR do
+      begin
+        cholSum := Kxx[j][j];
+        for kk := 1 to j - 1 do
+          cholSum := cholSum - Kxx[j][kk] * Kxx[j][kk];
+        if cholSum <= 1.0E-10 * cholMaxDiag then
+          Fail(ExitInvalidModel, Format(
+            'Freedom case "%s": %s has no mass and is not restrained by any stiffness (a mechanism ' +
+            'among the massless dofs, or a node no element stiffens) -- constrain it, or connect it to the structure.',
+            [FC.Id, EqLabel(eqOfR[j])]));
+        Kxx[j][j] := Sqrt(cholSum);
+        for i := j + 1 to nR do
+        begin
+          cholSum := Kxx[i][j];
+          for kk := 1 to j - 1 do
+            cholSum := cholSum - Kxx[i][kk] * Kxx[j][kk];
+          Kxx[i][j] := cholSum / Kxx[j][j];
+        end;
+      end;
+
+      // Xr = Krr^-1 * Krt, one column of Krt at a time (forward then back substitution).
+      for j := 1 to nT do
+      begin
+        for i := 1 to nR do
+        begin
+          cholSum := Krt[i][j];
+          for kk := 1 to i - 1 do
+            cholSum := cholSum - Kxx[i][kk] * Xr[kk][j];
+          Xr[i][j] := cholSum / Kxx[i][i];
+        end;
+        for i := nR downto 1 do
+        begin
+          cholSum := Xr[i][j];
+          for kk := i + 1 to nR do
+            cholSum := cholSum - Kxx[kk][i] * Xr[kk][j];
+          Xr[i][j] := cholSum / Kxx[i][i];
+        end;
+      end;
+
+      // Kc = Ktt - Ktr*Xr  (Ktr = Krt^T), then symmetrize away round-off asymmetry.
+      for i := 1 to nT do
+        for j := 1 to nT do
+        begin
+          cholSum := 0.0;
+          for kk := 1 to nR do
+            cholSum := cholSum + Krt[kk][i] * Xr[kk][j];
+          Ktt[i][j] := Ktt[i][j] - cholSum;
+        end;
+      for i := 1 to nT do
+        for j := i + 1 to nT do
+        begin
+          cholSum := 0.5 * (Ktt[i][j] + Ktt[j][i]);
+          Ktt[i][j] := cholSum;
+          Ktt[j][i] := cholSum;
+        end;
+    end;
+
+    // ---- Reduce to a standard symmetric eigenproblem: Kmass = D^-1 Kc D^-1, D=diag(sqrt(M)) ----
+    SetLength(Dsqrt, nT + 1);
+    for i := 1 to nT do
+      Dsqrt[i] := Sqrt(massedDof[eqOfT[i]]);
+    Kmass := NewDenseMatrix(nT);
+    for i := 1 to nT do
+      for j := 1 to nT do
+        Kmass[i][j] := Ktt[i][j] / (Dsqrt[i] * Dsqrt[j]);
 
     try
-      JacobiEigenSymmetric(Kmass, DofMap.NEQ, EigVals, EigVecs);
+      JacobiEigenSymmetric(Kmass, nT, EigVals, EigVecs);
     except
       on E: Exception do
         Fail(ExitSolverError, Format('Freedom case "%s": %s', [FC.Id, E.Message]));
     end;
 
     if Model.SolverParams.Verbose then
-      PrintOrthonormalityCheck(Format('freedom case "%s"', [FC.Id]), EigVecs, DofMap.NEQ);
+      PrintOrthonormalityCheck(Format('freedom case "%s"', [FC.Id]), EigVecs, nT);
 
     // ---- Output ----
     // omega^2 = eigenvalue of the mass-normalized problem; mode shape in
@@ -393,7 +520,9 @@ begin
     // convention) -- D^-1*eigenvector is already exactly mass-normalized
     // since the reduction was symmetric (Kmass eigenvectors are orthonormal
     // in the Euclidean sense, and phi = D^-1 y => phi^T M phi = y^T y = 1).
-    nModes := DofMap.NEQ;
+    nModes := nT;
+    SetLength(uT, nT + 1);
+    SetLength(uR, nR + 1);
     for i := 1 to nModes do
     begin
       if EigVals[i] < 0 then
@@ -414,14 +543,31 @@ begin
       end;
       WriteLn(OutF, Format('%sMODE.%d.omega=%.17e', [KeyPrefix, i, omega], FS));
       WriteLn(OutF, Format('%sMODE.%d.freq=%.17e', [KeyPrefix, i, freq], FS));
+      // Physical mode shape on the massed dofs, then the massless dofs by
+      // static recovery phi_r = -Krr^-1*Krt*phi_t (= -Xr*phi_t).
+      for kk := 1 to nT do
+        uT[kk] := EigVecs[kk][i] / Dsqrt[kk];
+      for kk := 1 to nR do
+      begin
+        cholSum := 0.0;
+        for eq_j := 1 to nT do
+          cholSum := cholSum + Xr[kk][eq_j] * uT[eq_j];
+        uR[kk] := -cholSum;
+      end;
       for j := 0 to High(Model.Nodes) do
         for eq_i := 0 to DofMap.NodeDofCounts[j] - 1 do
         begin
           gi := fem_dofmap.GlobalDof(DofMap, j, eq_i);
           eq_j := DofMap.GlobalToEq[gi];
           if eq_j > 0 then
-            WriteLn(OutF, Format('%sMODE.%d.DISP.%d.%s=%.17e',
-              [KeyPrefix, i, Model.Nodes[j].Id, DofNames[eq_i], EigVecs[eq_j][i] / Dsqrt[eq_j]], FS))
+          begin
+            if tOfEq[eq_j] > 0 then
+              WriteLn(OutF, Format('%sMODE.%d.DISP.%d.%s=%.17e',
+                [KeyPrefix, i, Model.Nodes[j].Id, DofNames[eq_i], uT[tOfEq[eq_j]]], FS))
+            else
+              WriteLn(OutF, Format('%sMODE.%d.DISP.%d.%s=%.17e',
+                [KeyPrefix, i, Model.Nodes[j].Id, DofNames[eq_i], uR[rOfEq[eq_j]]], FS));
+          end
           else
             WriteLn(OutF, Format('%sMODE.%d.DISP.%d.%s=%.17e', [KeyPrefix, i, Model.Nodes[j].Id, DofNames[eq_i], 0.0], FS));
         end;

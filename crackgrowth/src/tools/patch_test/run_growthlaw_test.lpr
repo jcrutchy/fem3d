@@ -183,6 +183,43 @@ begin
   Check('Newman closure: Smax/sigma0 > 1 raises a clear message', gotException,
     'no (or an unclear) exception');
 
+  // --- 14. Newman closure for R < -2 truncates at the R = -2 value ---
+  // (flight spectra routinely go below R = -2; this used to raise.)
+  rate := NewmanClosureF(-2.0, 0.3, 2.0);            // f at R = -2 (the branch boundary)
+  Check('Newman closure: R = -2 is continuous with the R < -2 branch',
+    ApproxEqual(NewmanClosureF(-2.0000001, 0.3, 2.0), rate, 1.0E-6),
+    Format('f(-2)=%g, f(-2-1e-7)=%g', [rate, NewmanClosureF(-2.0000001, 0.3, 2.0)]));
+  Check('Newman closure: R = -3 equals the R = -2 value',
+    NewmanClosureF(-3.0, 0.3, 2.0) = rate, 'R = -3 gave a different value');
+  Check('Newman closure: R = -50 equals the R = -2 value',
+    NewmanClosureF(-50.0, 0.3, 2.0) = rate, 'R = -50 gave a different value');
+  Check('Newman closure: R < -2 value is A0 - 2*A1 (hand evaluation, S=0.3, alpha=2)',
+    ApproxEqual(rate, (0.825 - 0.34 * 2 + 0.05 * 4) * Exp(Ln(Cos(Pi / 2 * 0.3)) / 2.0)
+                      - 2 * (0.415 - 0.071 * 2) * 0.3, 1.0E-12),
+    Format('got %g', [rate]));
+  // Earlier sections left `mat` without NASGRO constants; restore the
+  // section-6 NASGRO material for the end-to-end checks below.
+  mat.HasNasgro := True;
+  mat.NasgroC := 1.75E-10; mat.NasgroN := 3.0; mat.NasgroP := 0.5; mat.NasgroQ := 1.0;
+  mat.NasgroDeltaKth := 2.0; mat.NasgroKc := 60.0; mat.NasgroAlpha := 1.5;
+  mat.HasParis := False; mat.HasWalker := False; mat.HasForman := False;
+  // NasgroRate end to end at R = -3 must now be a finite positive rate.
+  // (Kmax = DeltaK/(1-R) = 20/4 = 5, well below Kc.)
+  rate := NasgroRate(20.0, 5.0, -3.0, mat);
+  Check('NASGRO: R = -3 gives a finite positive rate (no exception)',
+    (rate > 0.0) and (rate < 1.0), Format('got %g', [rate]));
+
+  // --- 15. Fully compressive cycle (Kmax <= 0) must not grow the crack ---
+  rate := NasgroRate(10.0, -4.0, -3.0, mat);
+  Check('NASGRO: Kmax < 0 -> 0 growth', rate = 0.0, Format('got %g', [rate]));
+  rate := NasgroRate(10.0, 0.0, -1.0E9, mat);
+  Check('NASGRO: Kmax = 0 -> 0 growth', rate = 0.0, Format('got %g', [rate]));
+  rateCons := ConservativeRate(10.0, -4.0, -3.0, mat, lawUsed);
+  Check('ConservativeRate: Kmax < 0 -> 0 growth', rateCons = 0.0, Format('got %g', [rateCons]));
+  rateCons := BestAvailableRate(10.0, -4.0, -3.0, mat, lawUsed);
+  Check('BestAvailableRate: Kmax < 0 -> 0 growth', (rateCons = 0.0) and (lawUsed = glNasgro),
+    Format('got %g, law %d', [rateCons, Ord(lawUsed)]));
+
   WriteLn;
   if FailCount = 0 then
     WriteLn('ALL CHECKS PASSED')

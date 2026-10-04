@@ -153,7 +153,18 @@ end;
 // in the main narrative, not just behind the FEM_DEBUG env var (which
 // stays as-is for anyone who wants it on stderr regardless of Verbose).
 procedure PrintPcgConvergence(const CaseLabel: string; iters: Integer; shift, tol: Double);
+var
+  driftNote: string;
 begin
+  // Verified against the TRUE residual b - A*x (not just the iteration's
+  // own running estimate) -- see fem_pcg's PCGSolve.
+  if PCGLastDiagnostics.Restarts > 0 then
+    driftNote := Format('; the running estimate had drifted and the iteration was restarted %d time(s)',
+      [PCGLastDiagnostics.Restarts])
+  else
+    driftNote := '';
+  WriteLn(OutF, Format('# PCG for %s: true residual ||b-Ax||/||b|| = %s (checked directly, not just the iteration''s running estimate)%s.',
+    [CaseLabel, D2Str(PCGLastDiagnostics.TrueRelResidual, FS), driftNote]));
   if shift > 0 then
     WriteLn(OutF, Format('# PCG for %s: converged in %d iteration(s) to tolerance %s (IC(0) preconditioner '
       + 'needed a diagonal shift of %s to avoid breakdown -- see docs/linsparse.md).',
