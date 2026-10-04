@@ -1,0 +1,56 @@
+FEM3DGEO 1.0
+UNITS length=mm force=N stress=MPa
+COORDSYS CARTESIAN
+SOURCE format=CATALOGUE name="150x100x12UA"
+
+# -------------------------------------------------------------
+# Vertices (Coordinates in mm, heel at (0, 0))
+# Long leg b1=150.0 (along Y), Short leg b2=100.0 (along X)
+# Thickness t=12.0, Root fillet r1=10.0
+# -------------------------------------------------------------
+VERTEX 1   0.000   0.000 0.0
+VERTEX 2 100.000   0.000 0.0
+VERTEX 3 100.000  12.000 0.0
+VERTEX 4  22.000  12.000 0.0
+VERTEX 5  12.000  22.000 0.0
+VERTEX 6  12.000 150.000 0.0
+VERTEX 7   0.000 150.000 0.0
+
+# -------------------------------------------------------------
+# Curves: 6 Straight LINEs and 1 Root Fillet ARC3
+# -------------------------------------------------------------
+# Bottom leg exterior
+CURVE 1 LINE   0.000   0.000 0.0 100.000 0.000 0.0
+# Short leg toe tip
+CURVE 2 LINE 100.000   0.000 0.0   0.000 12.000 0.0
+# Short leg inner face
+CURVE 3 LINE 100.000  12.000 0.0 -78.000 0.000 0.0
+
+# Internal root fillet (r1 = 10.0 mm)
+CURVE 4 ARC3  22.000  12.000 0.0  14.929 14.929 0.0 12.000 22.000 0.0
+
+# Long leg inner face
+CURVE 5 LINE  12.000  22.000 0.0   0.000 128.000 0.0
+# Long leg toe tip
+CURVE 6 LINE  12.000 150.000 0.0 -12.000   0.000 0.0
+# Long leg outer back
+CURVE 7 LINE   0.000 150.000 0.0   0.000 -150.000 0.0
+
+# -------------------------------------------------------------
+# Edges: CCW Boundary Traversal
+# -------------------------------------------------------------
+EDGE 1 1 2 1 0.0 1.0 +1
+EDGE 2 2 3 2 0.0 1.0 +1
+EDGE 3 3 4 3 0.0 1.0 +1
+EDGE 4 4 5 4 0.0 1.0 +1
+EDGE 5 5 6 5 0.0 1.0 +1
+EDGE 6 6 7 6 0.0 1.0 +1
+EDGE 7 7 1 7 0.0 1.0 +1
+
+# -------------------------------------------------------------
+# Topology: Closed Outer Loop, Plane Surface, Face, and Body
+# -------------------------------------------------------------
+LOOP 1 EDGE 1 +1 EDGE 2 +1 EDGE 3 +1 EDGE 4 +1 EDGE 5 +1 EDGE 6 +1 EDGE 7 +1
+SURFACE 1 PLANE 0.0 0.0 0.0 0.0 0.0 1.0
+FACE 1 1 OUTER 1
+BODY 1 FACE 1

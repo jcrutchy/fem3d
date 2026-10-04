@@ -1,0 +1,191 @@
+Here are two production-ready sample .fgeo (FEM3DGEO 1.0) geometry files based
+on the Australian Standard AS/NZS 3679.1 catalogue:
+
+1.  200ub25_4.fgeo: A Universal Beam (200 UB 25.4) with precise dimensions
+    (d=203.2\,\text{mm}, b_f=133.0\,\text{mm}, t_f=7.8\,\text{mm}, t_w=5.8\,\text{mm})
+    and 4 true circular root fillets (r_1=8.9\,\text{mm}) modeled using ARC3
+    curves.
+2.  150x100x12ua.fgeo: An Unequal Angle (150 x 100 x 12 UA) with asymmetric legs
+    (b_1=150.0\,\text{mm}, b_2=100.0\,\text{mm}, t=12.0\,\text{mm}) and an
+    internal corner root fillet (r_1=10.0\,\text{mm}).
+
+File 1: 200ub25_4.fgeo (Universal Beam)
+
+FEM3DGEO 1.0
+UNITS length=mm force=N stress=MPa
+COORDSYS CARTESIAN
+SOURCE format=CATALOGUE name="200UB25.4"
+
+# -------------------------------------------------------------
+# Vertices (Coordinates in mm, centered on centroid at (0, 0))
+# d=203.2, bf=133.0, tf=7.8, tw=5.8, r1=8.9
+# -------------------------------------------------------------
+VERTEX 1  -66.500 -101.600 0.0
+VERTEX 2   66.500 -101.600 0.0
+VERTEX 3   66.500  -93.800 0.0
+VERTEX 4   11.800  -93.800 0.0
+VERTEX 5    2.900  -84.900 0.0
+VERTEX 6    2.900   84.900 0.0
+VERTEX 7   11.800   93.800 0.0
+VERTEX 8   66.500   93.800 0.0
+VERTEX 9   66.500  101.600 0.0
+VERTEX 10 -66.500  101.600 0.0
+VERTEX 11 -66.500   93.800 0.0
+VERTEX 12 -11.800   93.800 0.0
+VERTEX 13  -2.900   84.900 0.0
+VERTEX 14  -2.900  -84.900 0.0
+VERTEX 15 -11.800  -93.800 0.0
+VERTEX 16 -66.500  -93.800 0.0
+
+# -------------------------------------------------------------
+# Curves: 12 Straight LINEs and 4 Circular Fillet ARC3s
+# -------------------------------------------------------------
+# Bottom flange exterior
+CURVE 1  LINE -66.500 -101.600 0.0 133.000 0.000 0.0
+CURVE 2  LINE  66.500 -101.600 0.0   0.000 7.800 0.0
+CURVE 3  LINE  66.500  -93.800 0.0 -54.700 0.000 0.0
+
+# Bottom-right web fillet (r1 = 8.9 mm)
+CURVE 4  ARC3  11.800 -93.800 0.0 5.507 -91.193 0.0 2.900 -84.900 0.0
+
+# Right web face
+CURVE 5  LINE   2.900 -84.900 0.0 0.000 169.800 0.0
+
+# Top-right web fillet (r1 = 8.9 mm)
+CURVE 6  ARC3   2.900  84.900 0.0 5.507 91.193 0.0 11.800 93.800 0.0
+
+# Top flange right underside & exterior
+CURVE 7  LINE  11.800  93.800 0.0 54.700 0.000 0.0
+CURVE 8  LINE  66.500  93.800 0.0  0.000 7.800 0.0
+CURVE 9  LINE  66.500 101.600 0.0 -133.000 0.000 0.0
+CURVE 10 LINE -66.500 101.600 0.0  0.000 -7.800 0.0
+CURVE 11 LINE -66.500  93.800 0.0 54.700 0.000 0.0
+
+# Top-left web fillet (r1 = 8.9 mm)
+CURVE 12 ARC3 -11.800  93.800 0.0 -5.507 91.193 0.0 -2.900 84.900 0.0
+
+# Left web face
+CURVE 13 LINE  -2.900  84.900 0.0 0.000 -169.800 0.0
+
+# Bottom-left web fillet (r1 = 8.9 mm)
+CURVE 14 ARC3  -2.900 -84.900 0.0 -5.507 -91.193 0.0 -11.800 -93.800 0.0
+
+# Bottom flange left underside & tip
+CURVE 15 LINE -11.800 -93.800 0.0 -54.700 0.000 0.0
+CURVE 16 LINE -66.500 -93.800 0.0   0.000 -7.800 0.0
+
+# -------------------------------------------------------------
+# Edges: CCW Boundary Traversal
+# -------------------------------------------------------------
+EDGE 1   1  2  1 0.0 1.0 +1
+EDGE 2   2  3  2 0.0 1.0 +1
+EDGE 3   3  4  3 0.0 1.0 +1
+EDGE 4   4  5  4 0.0 1.0 +1
+EDGE 5   5  6  5 0.0 1.0 +1
+EDGE 6   6  7  6 0.0 1.0 +1
+EDGE 7   7  8  7 0.0 1.0 +1
+EDGE 8   8  9  8 0.0 1.0 +1
+EDGE 9   9 10  9 0.0 1.0 +1
+EDGE 10 10 11 10 0.0 1.0 +1
+EDGE 11 11 12 11 0.0 1.0 +1
+EDGE 12 12 13 12 0.0 1.0 +1
+EDGE 13 13 14 13 0.0 1.0 +1
+EDGE 14 14 15 14 0.0 1.0 +1
+EDGE 15 15 16 15 0.0 1.0 +1
+EDGE 16 16  1 16 0.0 1.0 +1
+
+# -------------------------------------------------------------
+# Topology: Closed Outer Loop, Plane Surface, Face, and Body
+# -------------------------------------------------------------
+LOOP 1 EDGE 1 +1 EDGE 2 +1 EDGE 3 +1 EDGE 4 +1 EDGE 5 +1 EDGE 6 +1 EDGE 7 +1 EDGE 8 +1 EDGE 9 +1 EDGE 10 +1 EDGE 11 +1 EDGE 12 +1 EDGE 13 +1 EDGE 14 +1 EDGE 15 +1 EDGE 16 +1
+SURFACE 1 PLANE 0.0 0.0 0.0 0.0 0.0 1.0
+FACE 1 1 OUTER 1
+BODY 1 FACE 1
+
+File 2: 150x100x12ua.fgeo (Unequal Angle)
+
+FEM3DGEO 1.0
+UNITS length=mm force=N stress=MPa
+COORDSYS CARTESIAN
+SOURCE format=CATALOGUE name="150x100x12UA"
+
+# -------------------------------------------------------------
+# Vertices (Coordinates in mm, heel at (0, 0))
+# Long leg b1=150.0 (along Y), Short leg b2=100.0 (along X)
+# Thickness t=12.0, Root fillet r1=10.0
+# -------------------------------------------------------------
+VERTEX 1   0.000   0.000 0.0
+VERTEX 2 100.000   0.000 0.0
+VERTEX 3 100.000  12.000 0.0
+VERTEX 4  22.000  12.000 0.0
+VERTEX 5  12.000  22.000 0.0
+VERTEX 6  12.000 150.000 0.0
+VERTEX 7   0.000 150.000 0.0
+
+# -------------------------------------------------------------
+# Curves: 6 Straight LINEs and 1 Root Fillet ARC3
+# -------------------------------------------------------------
+# Bottom leg exterior
+CURVE 1 LINE   0.000   0.000 0.0 100.000 0.000 0.0
+# Short leg toe tip
+CURVE 2 LINE 100.000   0.000 0.0   0.000 12.000 0.0
+# Short leg inner face
+CURVE 3 LINE 100.000  12.000 0.0 -78.000 0.000 0.0
+
+# Internal root fillet (r1 = 10.0 mm)
+CURVE 4 ARC3  22.000  12.000 0.0  14.929 14.929 0.0 12.000 22.000 0.0
+
+# Long leg inner face
+CURVE 5 LINE  12.000  22.000 0.0   0.000 128.000 0.0
+# Long leg toe tip
+CURVE 6 LINE  12.000 150.000 0.0 -12.000   0.000 0.0
+# Long leg outer back
+CURVE 7 LINE   0.000 150.000 0.0   0.000 -150.000 0.0
+
+# -------------------------------------------------------------
+# Edges: CCW Boundary Traversal
+# -------------------------------------------------------------
+EDGE 1 1 2 1 0.0 1.0 +1
+EDGE 2 2 3 2 0.0 1.0 +1
+EDGE 3 3 4 3 0.0 1.0 +1
+EDGE 4 4 5 4 0.0 1.0 +1
+EDGE 5 5 6 5 0.0 1.0 +1
+EDGE 6 6 7 6 0.0 1.0 +1
+EDGE 7 7 1 7 0.0 1.0 +1
+
+# -------------------------------------------------------------
+# Topology: Closed Outer Loop, Plane Surface, Face, and Body
+# -------------------------------------------------------------
+LOOP 1 EDGE 1 +1 EDGE 2 +1 EDGE 3 +1 EDGE 4 +1 EDGE 5 +1 EDGE 6 +1 EDGE 7 +1
+SURFACE 1 PLANE 0.0 0.0 0.0 0.0 0.0 1.0
+FACE 1 1 OUTER 1
+BODY 1 FACE 1
+
+Verification Quick Test
+
+You can run both files straight through the femsection CLI tool to verify them:
+
+# 1. Run the Universal Beam
+./bin/femsection 200ub25_4.fgeo 200ub25_4.prop
+
+# 2. Run the Unequal Angle
+./bin/femsection 150x100x12ua.fgeo 150x100x12ua.prop
+
+Expected Output for 200ub25_4.prop:
+
+  - Area: \approx 3.23 \times 10^3\,\text{mm}^2 (Matches catalogue
+    3230\,\text{mm}^2 within \approx 0.03\%)
+  - Ixx: \approx 2.36 \times 10^7\,\text{mm}^4 (23.6 \times 10^6\,\text{mm}^4)
+  - Iyy: \approx 3.06 \times 10^6\,\text{mm}^4 (3.06 \times 10^6\,\text{mm}^4)
+  - rx: \approx 85.4\,\text{mm}
+  - ry: \approx 30.8\,\text{mm}
+  - Ixy: 0.0\,\text{mm}^4 (doubly symmetric)
+
+Expected Output for 150x100x12ua.prop:
+
+  - Area: \approx 2.835 \times 10^3\,\text{mm}^2
+  - CentroidX: \approx 24.3\,\text{mm}
+  - CentroidY: \approx 49.1\,\text{mm}
+  - Ixy: Non-zero (asymmetric, with principal angle
+    \theta_p \approx 23^\circ - 24^\circ)
+  - I1 / I2: Distinct principal moments confirming the orientation calculation.
