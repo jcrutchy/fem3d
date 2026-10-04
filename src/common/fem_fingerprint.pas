@@ -73,6 +73,7 @@ begin
   end;
   if lineStart < N then Emit(lineStart, N);
   a := 0; b := outLen;
+  Result := nil;
   SetLength(Result, b - a);
   if b > a then Move(OutBuf[0], Result[0], b - a);
 end;

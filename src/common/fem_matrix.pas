@@ -467,6 +467,7 @@ function NewMatrix(Rows, Cols: Integer): TDenseMatrix;
 var
   i: Integer;
 begin
+  Result := nil;
   SetLength(Result, Rows + 1, Cols + 1);
   for i := 0 to Rows do
     FillChar(Result[i][0], (Cols + 1) * SizeOf(Double), 0);
@@ -538,6 +539,7 @@ begin
   nr := MatRows(A); nc := MatCols(A);
   if Length(x) < nc + 1 then
     raise Exception.Create('MatVec: vector shorter than matrix column count');
+  Result := nil;
   SetLength(Result, nr + 1);
   Result[0] := 0.0;
   for i := 1 to nr do

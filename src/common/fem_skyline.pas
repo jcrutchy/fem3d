@@ -57,6 +57,7 @@ function ComputeSkylineHeight(ANeq: Integer; const ElementEqs: array of TIntArra
 var
   i, j, minEq, eq: Integer;
 begin
+  Result := nil;
   SetLength(Result, ANeq + 1);
   for i := 1 to ANeq do Result[i] := 0;
   for i := 0 to High(ElementEqs) do

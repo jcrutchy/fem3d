@@ -60,6 +60,16 @@ ReactionFY=REACT.1.y
   `[EXPECTATIONS]` values from casual editing -- if someone "fixes" a
   failing test by loosening the expected number instead of the solver,
   this catches it.
+
+  **Both hashes must sit in `[FILES]`.** That is the only section the runner
+  reads them from, so a `ModelSHA256=` or `ManifestSHA256=` line anywhere else
+  (adding it at the end of the file puts it in whichever section happens to come
+  last) is silently ignored -- the case looks protected and is not. The runner
+  now fails such a case outright, naming the stray key, and `--update-hashes`
+  always writes the hashes into `[FILES]` (replacing a line already there,
+  adding one at the end of the section, creating the section if needed, and
+  removing stray copies). A case with no hashes at all still runs, and the
+  summary says how many cases are not tamper-checked.
 - **`[EXPECTATIONS]`** (VERIFIED only) — `Tolerance` plus any number of
   named values. Names are yours to choose (`TipUY`, `ReactionFY`,
   whatever reads clearly for the case).

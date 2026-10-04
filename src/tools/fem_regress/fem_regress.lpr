@@ -63,7 +63,7 @@ var
   FS: TFormatSettings;
   TargetPath, BinDir: string;
   UpdateHashesMode: Boolean;
-  TotalCases, PassedCases: Integer;
+  TotalCases, PassedCases, UnhashedCases: Integer;
 
 procedure PrintUsage;
 begin
@@ -109,9 +109,59 @@ begin
 end;
 
 function ManifestHash(const ManifestPath: string): string;
+var
+  Raw: RawByteString;
+  Bytes: TBytes;
 begin
-  Result := DigestToHex(SHA256Bytes(TEncoding.UTF8.GetBytes(
-    CanonicalManifestText(ManifestPath, True))));
+  // Hash the text's bytes exactly as they are. Going through TEncoding.UTF8.GetBytes
+  // first converts the AnsiString to UTF-16 using the machine's ANSI code page, so a
+  // manifest holding a non-ASCII character would hash differently on Windows (code page
+  // 1252, say) than on Linux (UTF-8). For pure-ASCII manifests -- all of them today --
+  // the bytes, and so every existing hash, are unchanged.
+  Raw := RawByteString(CanonicalManifestText(ManifestPath, True));
+  SetLength(Bytes, Length(Raw));
+  if Length(Raw) > 0 then Move(Raw[1], Bytes[0], Length(Raw));
+  Result := DigestToHex(SHA256Bytes(Bytes));
+end;
+
+// Names of ModelSHA256 / ManifestSHA256 lines found in any section other than [FILES].
+// Only [FILES] is ever read for the integrity checks, so a hash sitting anywhere else
+// (appended to the end of the file lands in whatever section comes last) is silently
+// ignored -- the case LOOKS protected and is not.
+function StrayHashKeys(const ManifestPath: string): string;
+var
+  SL: TStringList;
+  i, eq: Integer;
+  line, k: string;
+  inFiles: Boolean;
+begin
+  Result := '';
+  SL := TStringList.Create;
+  try
+    SL.LoadFromFile(ManifestPath);
+    inFiles := False;
+    for i := 0 to SL.Count - 1 do
+    begin
+      line := Trim(SL[i]);
+      if (Length(line) > 1) and (line[1] = '[') then
+      begin
+        inFiles := SameText(line, '[FILES]');
+        Continue;
+      end;
+      eq := Pos('=', line);
+      if (eq > 0) and (not inFiles) then
+      begin
+        k := Trim(Copy(line, 1, eq - 1));
+        if SameText(k, 'ModelSHA256') or SameText(k, 'ManifestSHA256') then
+        begin
+          if Result <> '' then Result := Result + ', ';
+          Result := Result + k;
+        end;
+      end;
+    end;
+  finally
+    SL.Free;
+  end;
 end;
 
 // --- solver KV output parsing ----------------------------------------------
@@ -193,7 +243,7 @@ procedure RunCase(const ManifestPath: string);
 var
   Ini: TMemIniFile;
   CaseDir, Status, SolverName, ModelRel, ModelPath, Exe: string;
-  ExpectModelHash, ActualModelHash, ExpectManifestHash, ActualManifestHash: string;
+  ExpectModelHash, ActualModelHash, ExpectManifestHash, ActualManifestHash, StrayKeys: string;
   ExitCode: Integer;
   StdOutText, StdErrText: string;
   ranOk: Boolean;
@@ -233,6 +283,13 @@ begin
     end;
 
     // --- integrity checks ---
+    StrayKeys := StrayHashKeys(ManifestPath);
+    if StrayKeys <> '' then
+    begin
+      WriteLn('FAIL  (' + StrayKeys + ' found outside [FILES]: that integrity check is NOT being applied; run --update-hashes to move it)');
+      Exit;
+    end;
+    if (ExpectModelHash = '') or (ExpectManifestHash = '') then Inc(UnhashedCases);
     if ExpectModelHash <> '' then
     begin
       ActualModelHash := SHA256FileHex(ModelPath);
@@ -350,14 +407,77 @@ begin
 end;
 
 // --- --update-hashes mode ---------------------------------------------------
+// Sets Key=Value inside the [FILES] section of a manifest held in SL -- the only place
+// the runner reads the integrity hashes from. An existing line there is replaced in
+// place; if there is none, one is inserted at the end of [FILES] (the section is created
+// if absent). Any copy of the key left in another section is removed.
+procedure SetFilesKey(SL: TStringList; const Key, Value: string);
+var
+  i, eq, lastInFiles, filesStart: Integer;
+  line, k: string;
+  inFiles, placed: Boolean;
+begin
+  // pass 1: remove copies outside [FILES]
+  inFiles := False;
+  i := 0;
+  while i < SL.Count do
+  begin
+    line := Trim(SL[i]);
+    if (Length(line) > 1) and (line[1] = '[') then
+      inFiles := SameText(line, '[FILES]')
+    else if not inFiles then
+    begin
+      eq := Pos('=', line);
+      if eq > 0 then
+      begin
+        k := Trim(Copy(line, 1, eq - 1));
+        if SameText(k, Key) then
+        begin
+          SL.Delete(i);
+          Continue;
+        end;
+      end;
+    end;
+    Inc(i);
+  end;
+
+  // pass 2: replace within [FILES], remembering where the section's last entry is
+  placed := False; filesStart := -1; lastInFiles := -1; inFiles := False;
+  for i := 0 to SL.Count - 1 do
+  begin
+    line := Trim(SL[i]);
+    if (Length(line) > 1) and (line[1] = '[') then
+    begin
+      inFiles := SameText(line, '[FILES]');
+      if inFiles then begin filesStart := i; lastInFiles := i; end;
+    end
+    else if inFiles then
+    begin
+      if line <> '' then lastInFiles := i;
+      eq := Pos('=', line);
+      if eq > 0 then
+      begin
+        k := Trim(Copy(line, 1, eq - 1));
+        if SameText(k, Key) then begin SL[i] := Key + '=' + Value; placed := True; end;
+      end;
+    end;
+  end;
+  if placed then Exit;
+  if filesStart >= 0 then
+    SL.Insert(lastInFiles + 1, Key + '=' + Value)
+  else
+  begin
+    if (SL.Count > 0) and (Trim(SL[SL.Count - 1]) <> '') then SL.Add('');
+    SL.Add('[FILES]');
+    SL.Add(Key + '=' + Value);
+  end;
+end;
+
 procedure UpdateHashes(const ManifestPath: string);
 var
   CaseDir, ModelRel, ModelPath, modelHash, manifestHashHex: string;
   Ini: TMemIniFile;
   SL: TStringList;
-  i, eqPos: Integer;
-  key: string;
-  found: Boolean;
 begin
   CaseDir := ExtractFilePath(ExpandFileName(ManifestPath));
   Ini := TMemIniFile.Create(ManifestPath);
@@ -378,22 +498,12 @@ begin
   SL := TStringList.Create;
   try
     SL.LoadFromFile(ManifestPath);
-    found := False;
-    for i := 0 to SL.Count - 1 do
-    begin
-      eqPos := Pos('=', SL[i]);
-      if eqPos > 0 then
-      begin
-        key := Trim(Copy(SL[i], 1, eqPos - 1));
-        if CompareText(key, 'ModelSHA256') = 0 then
-        begin
-          SL[i] := 'ModelSHA256=' + modelHash;
-          found := True;
-        end;
-      end;
-    end;
-    if not found then
-      SL.Add('ModelSHA256=' + modelHash);
+    SetFilesKey(SL, 'ModelSHA256', modelHash);
+    // Put the manifest hash's line in its final place (empty for now) BEFORE hashing:
+    // the hash is taken over the whole file with that line's value blanked, so the line
+    // has to be where it will end up -- hashing first and moving it afterwards would
+    // produce a hash that the runner, reading the finished file, can never reproduce.
+    SetFilesKey(SL, 'ManifestSHA256', '');
     SL.LineBreak := #10;
     SL.SaveToFile(ManifestPath);
   finally
@@ -405,22 +515,7 @@ begin
   SL := TStringList.Create;
   try
     SL.LoadFromFile(ManifestPath);
-    found := False;
-    for i := 0 to SL.Count - 1 do
-    begin
-      eqPos := Pos('=', SL[i]);
-      if eqPos > 0 then
-      begin
-        key := Trim(Copy(SL[i], 1, eqPos - 1));
-        if CompareText(key, 'ManifestSHA256') = 0 then
-        begin
-          SL[i] := 'ManifestSHA256=' + manifestHashHex;
-          found := True;
-        end;
-      end;
-    end;
-    if not found then
-      SL.Add('ManifestSHA256=' + manifestHashHex);
+    SetFilesKey(SL, 'ManifestSHA256', manifestHashHex);
     SL.LineBreak := #10;
     SL.SaveToFile(ManifestPath);
   finally
@@ -436,6 +531,8 @@ procedure ProcessTarget(const Path: string);
 var
   Info: TSearchRec;
   sub: string;
+  Names: TStringList;
+  k: Integer;
 begin
   if (ExtractFileName(Path) = 'manifest.ini') or
      (not DirectoryExists(Path) and FileExists(Path)) then
@@ -452,19 +549,32 @@ begin
 
   if DirectoryExists(Path) then
   begin
-    if FindFirst(IncludeTrailingPathDelimiter(Path) + '*', faDirectory, Info) = 0 then
-    begin
-      try
-        repeat
-          if (Info.Name = '.') or (Info.Name = '..') then Continue;
-          if (Info.Attr and faDirectory) = 0 then Continue;
-          sub := IncludeTrailingPathDelimiter(Path) + Info.Name;
-          if FileExists(sub + PathDelim + 'manifest.ini') then
-            ProcessTarget(sub + PathDelim + 'manifest.ini');
-        until FindNext(Info) <> 0;
-      finally
-        FindClose(Info);
+    // Collect the case folders and run them in name order. Directory enumeration order
+    // is up to the file system (NTFS returns names sorted, ext4 does not), and a test
+    // report whose order differs from machine to machine cannot be compared with a diff.
+    Names := TStringList.Create;
+    try
+      if FindFirst(IncludeTrailingPathDelimiter(Path) + '*', faDirectory, Info) = 0 then
+      begin
+        try
+          repeat
+            if (Info.Name = '.') or (Info.Name = '..') then Continue;
+            if (Info.Attr and faDirectory) = 0 then Continue;
+            Names.Add(Info.Name);
+          until FindNext(Info) <> 0;
+        finally
+          FindClose(Info);
+        end;
       end;
+      Names.Sort;
+      for k := 0 to Names.Count - 1 do
+      begin
+        sub := IncludeTrailingPathDelimiter(Path) + Names[k];
+        if FileExists(sub + PathDelim + 'manifest.ini') then
+          ProcessTarget(sub + PathDelim + 'manifest.ini');
+      end;
+    finally
+      Names.Free;
     end;
   end;
 end;
@@ -509,11 +619,14 @@ begin
 
   TotalCases := 0;
   PassedCases := 0;
+  UnhashedCases := 0;
   ProcessTarget(TargetPath);
 
   if not UpdateHashesMode then
   begin
     WriteLn;
+    if UnhashedCases > 0 then
+      WriteLn(Format('note: %d case(s) have no integrity hashes (ModelSHA256 / ManifestSHA256 in [FILES]) and are not tamper-checked', [UnhashedCases]));
     WriteLn(Format('%d / %d cases passed', [PassedCases, TotalCases]));
     if PassedCases <> TotalCases then
       Halt(1);

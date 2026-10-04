@@ -24,6 +24,7 @@ end;
 
 function B(const S: string): TBytes;
 begin
+  Result := nil;
   SetLength(Result, Length(S));
   if Length(S) > 0 then Move(S[1], Result[0], Length(S));
 end;

@@ -67,6 +67,7 @@ function MatVec(const K: TElemMatrix; const u: array of Double): TDoubleArray;
 var
   i, j: Integer;
 begin
+  Result := nil;
   SetLength(Result, 13);
   for i := 1 to 12 do
   begin
@@ -81,6 +82,7 @@ function MatVecN(const K: TElemMatrix; const u: TDoubleArray; N: Integer): TDoub
 var
   i, j: Integer;
 begin
+  Result := nil;
   SetLength(Result, N + 1);
   for i := 1 to N do
   begin
@@ -139,6 +141,7 @@ var
   px, py: array[1..4] of Double;
   i: Integer;
 begin
+  Result := nil;
   px[1]:=x1; py[1]:=y1; px[2]:=x2; py[2]:=y2;
   px[3]:=x3; py[3]:=y3; px[4]:=x4; py[4]:=y4;
   SetLength(Result, 13);
@@ -155,6 +158,7 @@ var
   px, py: array[1..4] of Double;
   i: Integer;
 begin
+  Result := nil;
   px[1]:=x1; py[1]:=y1; px[2]:=x2; py[2]:=y2;
   px[3]:=x3; py[3]:=y3; px[4]:=x4; py[4]:=y4;
   SetLength(Result, 13);
@@ -171,6 +175,7 @@ var
   px, py: array[1..4] of Double;
   i: Integer;
 begin
+  Result := nil;
   px[1]:=x1; py[1]:=y1; px[2]:=x2; py[2]:=y2;
   px[3]:=x3; py[3]:=y3; px[4]:=x4; py[4]:=y4;
   SetLength(Result, 13);
@@ -187,6 +192,7 @@ var
   px, py: array[1..4] of Double;
   i: Integer;
 begin
+  Result := nil;
   px[1]:=x1; py[1]:=y1; px[2]:=x2; py[2]:=y2;
   px[3]:=x3; py[3]:=y3; px[4]:=x4; py[4]:=y4;
   SetLength(Result, 13);
@@ -284,6 +290,7 @@ function ShellRigidTranslationDofs(dx, dy, dz: Double): TDoubleArray;
 var
   blk: Integer;
 begin
+  Result := nil;
   SetLength(Result, 25);
   for blk := 0 to 3 do
   begin

@@ -174,6 +174,7 @@ function NewDenseMatrix(N: Integer): TDenseMatrix;
 var
   i: Integer;
 begin
+  Result := nil;
   SetLength(Result, N + 1, N + 1);
   for i := 0 to N do
     FillChar(Result[i][0], (N + 1) * SizeOf(Double), 0);

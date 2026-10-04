@@ -35,6 +35,7 @@ end;
 function Eqs(const A: array of Integer): TIntArray;
 var i: Integer;
 begin
+  Result := nil;
   SetLength(Result, Length(A));
   for i := 0 to High(A) do Result[i] := A[i];
 end;

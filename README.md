@@ -184,7 +184,7 @@ independently cross-checked one). Every tutorial's model is a real
 - `tests/regression/` — `fem_regress` manifest-driven cases with
   SHA-256-protected models and hand-verified (or, where hand calculation
   isn't possible, independently cross-checked) expected values. See
-  `docs/regression_testing.md`. 38 cases, split roughly evenly between
+  `docs/regression_testing.md`. Cases run in name order, so the report is the same on every machine. 52 cases, split roughly evenly between
   VERIFIED (truss, beam, moment frames including a statically-
   indeterminate portal frame cross-checked against NumPy, modal,
   shellq4/shellq8 membrane patch tests, load-case combinations,
@@ -280,6 +280,18 @@ independently cross-checked one). Every tutorial's model is a real
       quads (concave / bow-tie / degenerate corners rejected as model
       errors), `PivotTolerance` solver parameter, typed constants
       untyped, duplicate test file removed.
+- [x] One-command test run: `test_all.sh` / `test_all.bat` run the
+      regression suite and every self-checking test program (plus the
+      viewer's node tests if node is installed) and report one line each,
+      flagging any program that was not built. The Windows batch file is
+      untested -- written without a Windows machine to run it on.
+- [x] Review of the Windows build/test logs: everything builds (0 errors) and
+      52/52 pass; the 296 numbers printed match a Linux build digit for
+      digit. It exposed 8 regression manifests whose integrity hashes sat in
+      the wrong section and were never checked -- now fixed, with `fem_regress`
+      failing such a manifest, `--update-hashes` always writing into `[FILES]`
+      (and hashing in the right order), cases run in name order, and manifest
+      hashing independent of the Windows code page.
 - [x] Shared matrix/vector library `fem_matrix` (block-structured element
       transforms, B^T·D·B accumulation, small inverses, dense helpers, an
       optional SSE2 kernel behind `-dFEM_USE_ASM`); the per-element inline
