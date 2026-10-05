@@ -1,6 +1,6 @@
 unit fem_geometry_io;
 
-// Reader/writer for the FEM3DGEO 1.0 text format (femgeo/docs/FEM3DGEO.md).
+// Reader/writer for the FEM3DGEO 1.0 text format (docs/FEM3DGEO.md).
 // Both LoadFGeo and WriteFGeo take a plain TStream -- for a file, wrap a
 // TFileStream; for stdin/stdout (the streaming contract in spec section
 // 16), wrap THandleStream.Create(StdInputHandle) /
@@ -9,7 +9,7 @@ unit fem_geometry_io;
 // completely different I/O abstraction and cannot be passed to
 // anything expecting a TStream. (This is corrected from an earlier
 // draft of this module that tried exactly that and could not compile;
-// see femgeo/docs/TODO.md.)
+// see docs/TODO_femgeo.md.)
 
 {$mode objfpc}{$H+}
 
@@ -24,7 +24,7 @@ function LoadFGeoFile(const FileName: string; out Model: TFEMGeometryModel; out 
 // Writes in CANONICAL form (spec section 15): header records in the
 // order the spec lists them, entities in ascending ID order within
 // each type, explicit +1/-1 signs, no volatile timestamps -- what
-// makes .fgeo fixtures suitable for regression tests (femgeo/tests/).
+// makes .fgeo fixtures suitable for regression tests (tests/geometry/).
 procedure WriteFGeo(const Model: TFEMGeometryModel; Stream: TStream);
 procedure WriteFGeoFile(const Model: TFEMGeometryModel; const FileName: string);
 
@@ -58,7 +58,7 @@ end;
 // of position -- this rewrite fixes an earlier version of this
 // function that only recognised quoting when a field started with a
 // quote character, which broke on exactly this key="value with
-// spaces" form (see femgeo/docs/TODO.md).
+// spaces" form (see docs/TODO_femgeo.md).
 function Tokenize(const Line: string): TStringArray;
 var
   i, n: Integer;

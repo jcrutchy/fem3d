@@ -61,7 +61,7 @@ type
     // material datasets assume) is worth an independent check against
     // the actual NASGRO reference manual before this is trusted for
     // real (especially certification-relevant) work -- see
-    // crackgrowth/docs/TODO.md.
+    // docs/TODO_crackgrowth.md.
     HasNasgro: Boolean;
     NasgroC, NasgroN, NasgroP, NasgroQ: Double;
     NasgroDeltaKth, NasgroKc: Double;

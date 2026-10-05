@@ -9,3 +9,6 @@
 *.sqlite3-shm
 *.sqlite3-wal
 backup/
+*.lps
+src/lib/
+bin/

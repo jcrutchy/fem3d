@@ -18,7 +18,7 @@ program femgeocheck;
 // is to check and report, not to transform, so it does not re-emit the
 // model. A tool further down a pipe that needs the model too should
 // read it directly, or femgeocheck should gain a pass-through option
-// if that turns out to be needed in practice (see femgeo/docs/TODO.md).
+// if that turns out to be needed in practice (see docs/TODO_femgeo.md).
 
 {$mode objfpc}{$H+}
 

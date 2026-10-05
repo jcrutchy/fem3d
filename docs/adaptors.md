@@ -57,7 +57,7 @@ used. See `docs/femref.md`.
 
 ```
 src/adaptors/adapt_json/adapt_json.lpr        (built)
-src/adaptors/femresolve/femresolve.lpr        (built; engine in prop/src/common/fem_resolve.pas)
+src/adaptors/femresolve/femresolve.lpr        (built; engine in src/common/fem_resolve.pas)
 src/adaptors/adapt_strand7/adapt_strand7.lpr  (not started)
 src/adaptors/adapt_<next-format>/...
 ```

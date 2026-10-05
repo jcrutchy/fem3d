@@ -2,14 +2,14 @@ unit fem_section_db;
 
 {$mode objfpc}{$H+}
 
-// A catalogue of standard steel sections stored as JSON (today: prop/liberty_db.json,
+// A catalogue of standard steel sections stored as JSON (today: db/liberty_db.json,
 // the Liberty Steel hot-rolled catalogue), and the code that turns one catalogue
 // entry into a real cross-section outline -- so its properties can be COMPUTED by
 // the same fem_section_calc code that handles any other section, instead of
 // being copied from the catalogue's printed (3 significant figure) values.
 //
 // Used by both femresolve (to fill in a beam property from a designation such as
-// "150 UC 30.0") and the catalogue test (run_liberty_test), so the two can never
+// "150 UC 30.0") and the catalogue test (run_resolve_test), so the two can never
 // disagree about what a catalogue section looks like.
 //
 // WHAT CAN BE BUILT.  An outline is built from the catalogue's overall depth d,

@@ -2,46 +2,49 @@
 
 CAD geometry interchange for fem3d: a text-based B-rep format
 (FEM3DGEO 1.0, `docs/FEM3DGEO.md`) plus a checker and format adaptors,
-sitting alongside the main solver suite and `crackgrowth/` as a
-self-contained module using the same conventions (native text format,
+sitting alongside the main solver suite and the crack-growth module as a
+self-contained set of units using the same conventions (native text format,
 verbose diagnostics, small composable Unix-philosophy tools).
 
-Rebuilt from scratch 2026-09-29 -- see `docs/TODO.md` for exactly
+Rebuilt from scratch 2026-09-29 -- see `docs/TODO_femgeo.md` for exactly
 what's built, what's deliberately deferred, and why.
 
 ## Layout
 
 ```
-femgeo/
-  docs/FEM3DGEO.md         the format spec
-  docs/TODO.md             status and what's deferred
-  src/common/               types, IO (reader/canonical writer), validator
-  src/tools/femgeocheck/    CLI checker
-  src/tools/patch_test/     round-trip + fixture regression tests
-  src/adaptors/dxf2femgeo/  DXF -> FEM3DGEO (LINE, CIRCLE, ARC)
-  src/adaptors/iges2femgeo/ not yet rebuilt (see docs/TODO.md)
-  src/adaptors/step2femgeo/ not yet rebuilt (see docs/TODO.md)
-  tests/geometry/           good/borked .fgeo fixtures
-  examples/rivet_flange/    a worked DXF -> FEM3DGEO example
+docs/FEM3DGEO.md                         the format spec
+docs/TODO_femgeo.md                      status and what's deferred
+src/common/fem_geometry_*.pas            types, IO (reader/canonical writer), validator
+src/tools/femgeocheck/                   CLI checker
+src/tools/patch_test/run_roundtrip_test.lpr, run_geometry_fixtures.lpr
+                                         round-trip + fixture regression tests
+src/adaptors/dxf2femgeo/                 DXF -> FEM3DGEO (LINE, CIRCLE, ARC)
+src/adaptors/iges2femgeo/, step2femgeo/  NOT yet rebuilt: the .lpr files there are
+                                         the old code and do not compile
+tests/geometry/                          good/ and borked/ .fgeo fixtures
+examples/rivet_flange_geometry/          a worked DXF -> FEM3DGEO example
 ```
 
 ## Building and trying it
 
-```
-cd src/common && fpc fem_geometry_types.pas fem_geometry_io.pas fem_geometry_validate.pas
-cd ../tools/femgeocheck && fpc -Fu../../common femgeocheck.lpr
-cd ../../adaptors/dxf2femgeo && fpc -Fu../../common dxf2femgeo.lpr
+From the repository root (`build.bat` does all of this on Windows):
 
-./dxf2femgeo ../../../examples/rivet_flange/flange.dxf > /tmp/flange.fgeo
-./femgeocheck /tmp/flange.fgeo
+```
+fpc -MObjFPC -FE./bin -FU./bin -Fu./src/common src/tools/femgeocheck/femgeocheck.lpr
+fpc -MObjFPC -FE./bin -FU./bin -Fu./src/common src/adaptors/dxf2femgeo/dxf2femgeo.lpr
+
+./bin/dxf2femgeo examples/rivet_flange_geometry/flange.dxf > /tmp/flange.fgeo
+./bin/femgeocheck /tmp/flange.fgeo
 ```
 
 ## Verifying the build
 
 ```
-cd src/tools/patch_test
-fpc -Fu../../common run_roundtrip_test.lpr
-fpc -Fu../../common run_geometry_fixtures.lpr
-./run_roundtrip_test ../../../tests/geometry/good/001_rectangle.fgeo
-./run_geometry_fixtures ../femgeocheck/femgeocheck ../../../tests/geometry
+fpc -MObjFPC -FE./bin -FU./bin -Fu./src/common src/tools/patch_test/run_roundtrip_test.lpr
+fpc -MObjFPC -FE./bin -FU./bin -Fu./src/common src/tools/patch_test/run_geometry_fixtures.lpr
+./bin/run_roundtrip_test        # every good fixture + the rivet-flange example
+./bin/run_geometry_fixtures     # uses bin/femgeocheck and tests/geometry
 ```
+
+Both take optional arguments (file names / checker path and fixtures folder);
+with none they use the defaults above, so `test.bat` can run them blind.

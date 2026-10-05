@@ -151,7 +151,7 @@ var
   // ---- id -> exists lookups, one small linear-scan helper per entity
   // type. Geometry-import-scale models (hundreds to a few thousand
   // entities per part, not fem3d's own mesh-scale thousands-of-nodes
-  // models) -- a hash map would be premature here; see femgeo/docs/TODO.md
+  // models) -- a hash map would be premature here; see docs/TODO_femgeo.md
   // if that assumption stops holding.
   function VertexExists(Id: Integer): Boolean;
   var ii: Integer;
@@ -415,7 +415,7 @@ begin
   end;
 
   // GEO007: duplicate/coincident geometry (vertices only, for now --
-  // see femgeo/docs/TODO.md for extending this to curves/surfaces) ----
+  // see docs/TODO_femgeo.md for extending this to curves/surfaces) ----
   for i := 0 to High(Model.Vertices) do
     for j := i + 1 to High(Model.Vertices) do
       if VDist(Model.Vertices[i].P, Model.Vertices[j].P) <= coincTol then

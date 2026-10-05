@@ -148,7 +148,7 @@ fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
 fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
     src/adaptors/adapt_json/adapt_json.lpr
 
-fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common -Fu./prop/src/common \
+fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
     src/adaptors/femresolve/femresolve.lpr
 
 fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
@@ -158,6 +158,29 @@ fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
 (`-FE`/`-FU` = executable/unit output dirs, `-Fu` = common-unit search
 path. Each new solver/tool/adaptor just needs the same `-Fu` flag pointed
 at `src/common`.)
+
+The same pattern builds the remaining programs: `src/tools/femsection`,
+`src/tools/femgeocheck`, `src/adaptors/dxf2femgeo` and the test programs in
+`src/tools/*_test` and `src/tools/patch_test`. On Windows with Lazarus,
+`build.bat` compiles every `.lpi` in the tree into `bin\`, `test.bat` runs
+everything, and `run.bat` does both.
+
+## Repository layout
+
+```
+src/common/      shared units (model, solvers' maths, section, geometry, crack growth)
+src/solvers/     linstatic, linsparse, modal
+src/adaptors/    adapt_json, femresolve, dxf2femgeo (iges2femgeo / step2femgeo: not rebuilt)
+src/tools/       fem_regress, femsection, femgeocheck, test programs
+db/              section catalogues (liberty_db.json)
+docs/            all documentation (formats, tools, tutorials, TODOs)
+examples/        example inputs (section .fgeo files, rivet-flange DXF/FGEO)
+tests/           regression/ (fem_regress cases), geometry/ (.fgeo fixtures),
+                 liberty/ (catalogue-vs-calculator manifest)
+viewer/          web results viewer
+section_editor/  single-file browser section editor (writes .fgeo)
+bin/             build output (not committed)
+```
 
 ## Running
 
@@ -192,7 +215,7 @@ independently cross-checked one). Every tutorial's model is a real
 - `tests/regression/` — `fem_regress` manifest-driven cases with
   SHA-256-protected models and hand-verified (or, where hand calculation
   isn't possible, independently cross-checked) expected values. See
-  `docs/regression_testing.md`. Cases run in name order, so the report is the same on every machine. 58 cases, split roughly evenly between
+  `docs/regression_testing.md`. Cases run in name order, so the report is the same on every machine. 59 cases, split roughly evenly between
   VERIFIED (truss, beam, moment frames including a statically-
   indeterminate portal frame cross-checked against NumPy, modal,
   shellq4/shellq8 membrane patch tests, load-case combinations,
@@ -288,11 +311,11 @@ independently cross-checked one). Every tutorial's model is a real
       quads (concave / bow-tie / degenerate corners rejected as model
       errors), `PivotTolerance` solver parameter, typed constants
       untyped, duplicate test file removed.
-- [x] One-command test run: `test_all.sh` / `test_all.bat` run the
-      regression suite and every self-checking test program (plus the
-      viewer's node tests if node is installed) and report one line each,
-      flagging any program that was not built. The Windows batch file is
-      untested -- written without a Windows machine to run it on.
+- [x] One-command build and test on Windows: `run.bat` = `build.bat` (every
+      `.lpi` under the repo, via `lazbuild`) then `test.bat` (every
+      `bin\*test*.exe`, the geometry fixtures, and the `fem_regress`
+      suite; exits non-zero if anything failed). `build.bat nopause` /
+      `test.bat nopause` skip the final pause for scripted use.
 - [x] Review of the Windows build/test logs: everything builds (0 errors) and
       52/52 pass; the 296 numbers printed match a Linux build digit for
       digit. It exposed 8 regression manifests whose integrity hashes sat in

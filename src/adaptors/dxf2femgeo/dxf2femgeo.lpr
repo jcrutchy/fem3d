@@ -18,7 +18,7 @@ program dxf2femgeo;
 // bound which region, which is a downstream tool's job in the
 // streaming pipeline (spec section 16: "step2femgeo | femgeocheck |
 // geomclean | automesh"), not this format-translation adaptor's -- see
-// femgeo/docs/TODO.md.
+// docs/TODO_femgeo.md.
 //
 // Coincident points across different DXF entities (e.g. two LINEs that
 // share an endpoint) are welded to the SAME VERTEX record if they're
@@ -173,7 +173,7 @@ begin
   end;
   startPt.X := E.P1.X + E.Radius; startPt.Y := E.P1.Y; startPt.Z := E.P1.Z;
   v1 := AddOrWeldVertex(startPt);
-  normal := V3(0, 0, 1); // DXF CIRCLE lies in the entity's own XY plane (OCS); v1.0 assumes world XY -- see femgeo/docs/TODO.md re DXF OCS/extrusion-direction handling
+  normal := V3(0, 0, 1); // DXF CIRCLE lies in the entity's own XY plane (OCS); v1.0 assumes world XY -- see docs/TODO_femgeo.md re DXF OCS/extrusion-direction handling
   cId := NextCurveId;
   SetLength(model.Curves, cId);
   model.Curves[cId-1].Id := cId;

@@ -190,14 +190,14 @@ Notes on the fields:
   the thin-wall lower bound only, which is far too low for compact sections;
   `femsection` always solves.
 - **Catalogue sections.** `fem_section_db` rebuilds a standard section from the
-  dimensions printed in a JSON catalogue (`prop/liberty_db.json`) and passes it
+  dimensions printed in a JSON catalogue (`db/liberty_db.json`) and passes it
   through the same calculator, so a catalogue designation can supply a beam
   property (see `docs/femref.md`). Universal beams/columns/bearing piles and
   parallel flange channels are supported; tapered flange beams and angles are
   refused because the catalogue lacks the flange slope / root and toe radii.
   Computed values agree with the printed catalogue to about 1% (J: 2.5% for
   I-sections, 6% for channels).
-- **Self-test.** `run_section_test` (in `src/tools/patch_test`, wired into
-  `test_all.sh` / `test_all.bat`) holds the closed-form checks for areas,
+- **Self-test.** `run_section_test` (in `src/tools/patch_test`, run by
+  `test.bat`) holds the closed-form checks for areas,
   inertias, plastic moduli, hole placement and winding, J (solid, hollow and
   multi-cell), curved edges read from FEM3DGEO text, and the beam-line values.

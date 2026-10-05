@@ -58,7 +58,7 @@ brace, section, brace.prop
 - **`source`** is a path, relative to the folder of the `.femref` (or to
   `--base`), or absolute. By extension:
   - `.prop` — a section file written by `femsection`. No designation.
-  - `.json` — a section catalogue such as `prop/liberty_db.json`; the
+  - `.json` — a section catalogue such as `db/liberty_db.json`; the
     designation picks the entry.
 - **Using a reference.** Only as the **fourth field of a `[PROPERTIES]` row**,
   written `@name`. The row must be exactly `id, type, material, @name`.
@@ -131,11 +131,11 @@ default.
 
 ## Tests
 
-`run_resolve_test` (wired into `test_all`) has three groups:
+`run_resolve_test` (run by `test.bat`) has three groups:
 
-1. **Catalogue.** Every buildable entry of `prop/liberty_db.json` is rebuilt and
+1. **Catalogue.** Every buildable entry of `db/liberty_db.json` is rebuilt and
    compared with the catalogue's printed `Ag, Ix, Iy, Zx, Sx, Zy, Sy, J` (and
-   `XL` for channels). `prop/tests/liberty/manifest.ini` pins the SHA-256 of
+   `XL` for channels). `tests/liberty/manifest.ini` pins the SHA-256 of
    the database and of the manifest itself (the same rule `fem_regress` uses),
    the expected counts, and the tolerances. Editing the database or loosening a
    tolerance fails the run until you re-verify and run

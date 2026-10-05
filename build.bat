@@ -1,6 +1,10 @@
 @echo off
 setlocal
 
+:: Always work from the folder this script lives in, so the .lpi scan below
+:: covers the repository no matter where it was launched from.
+cd /d "%~dp0"
+
 :: Define paths
 set "LAZ_DIR=C:\lazarus"
 set "LAZBUILD=%LAZ_DIR%\lazbuild.exe"
@@ -43,8 +47,10 @@ goto :end
 :error
 echo.
 echo [FAILED] Compilation stopped due to errors.
+:: "build.bat nopause" is used by run.bat, which does its own pausing
+if /i not "%~1"=="nopause" pause
 exit /b 1
 
 :end
 endlocal
-pause
+if /i not "%~1"=="nopause" pause

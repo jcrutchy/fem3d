@@ -1,6 +1,6 @@
 unit fem_geometry_types;
 
-// Data model for FEM3DGEO 1.0 (see femgeo/docs/FEM3DGEO.md) -- a
+// Data model for FEM3DGEO 1.0 (see docs/FEM3DGEO.md) -- a
 // text-based B-rep geometry interchange format, kept deliberately
 // separate from fem3d's own solver-native .fem model (this describes
 // shapes; .fem describes a mesh and boundary conditions). One record

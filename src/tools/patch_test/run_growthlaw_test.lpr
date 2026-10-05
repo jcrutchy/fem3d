@@ -13,7 +13,7 @@ program run_growthlaw_test;
 //      Pascal transcription bug, but does NOT independently confirm
 //      the closure formula itself is what real NASGRO material data
 //      assumes; see fem_cg_growthlaws.pas's own header comment and
-//      crackgrowth/docs/TODO.md.
+//      docs/TODO_crackgrowth.md.
 //
 // Run with: ./run_growthlaw_test  (exit code 0 = all checks passed)
 

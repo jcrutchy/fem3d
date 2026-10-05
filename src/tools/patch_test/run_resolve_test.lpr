@@ -137,6 +137,19 @@ begin
   WriteLn('ManifestSHA256=', ManifestHashOf(ManifestPath));
 end;
 
+// The manifest's [FILES] Database= value (path relative to the manifest).
+function DatabaseKey(const ManifestPath: string): string;
+var
+  Ini: TMemIniFile;
+begin
+  Ini := TMemIniFile.Create(ManifestPath);
+  try
+    Result := Ini.ReadString('FILES', 'Database', 'liberty_db.json');
+  finally
+    Ini.Free;
+  end;
+end;
+
 function FindManifest(const Given: string): string;
 var
   exeDir: string;
@@ -565,9 +578,9 @@ var
   e: string;
 begin
   WriteLn('=== 3. COMMITTED MODEL vs ITS .femref ===');
-  caseDir := ExtractFilePath(ExpandFileName(ManifestPath)) + '..' + DirectorySeparator + '..' + DirectorySeparator
-    + '..' + DirectorySeparator + 'tests' + DirectorySeparator + 'regression' + DirectorySeparator
-    + '036_beam_liberty_section' + DirectorySeparator;
+  // manifest lives in <repo>/tests/liberty/, the case in <repo>/tests/regression/
+  caseDir := ExtractFilePath(ExpandFileName(ManifestPath)) + '..' + DirectorySeparator
+    + 'regression' + DirectorySeparator + '036_beam_liberty_section' + DirectorySeparator;
   refPath := caseDir + 'model.femref';
   femPath := caseDir + 'model.fem';
   if not (FileExists(refPath) and FileExists(femPath)) then
@@ -625,7 +638,8 @@ begin
     Halt(0);
   end;
 
-  DbDir := ExtractFilePath(ExpandFileName(manifest)) + '..' + DirectorySeparator + '..' + DirectorySeparator + 'db' + DirectorySeparator;
+  // one source of truth for where the catalogue lives: the manifest's own Database= key
+  DbDir := ExtractFilePath(ExpandFileName(ExtractFilePath(ExpandFileName(manifest)) + DatabaseKey(manifest)));
   TestCatalogue(manifest);
   TestResolver(manifest);
   TestRegressionCase(manifest);

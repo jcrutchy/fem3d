@@ -4,7 +4,7 @@ unit fem_cg_growthlaws;
 // intensity range at a crack tip, for one load cycle. This unit knows
 // nothing about crack geometry, K-solutions, or how a crack actually
 // grows over many cycles -- that's the next layer up (not yet built;
-// see crackgrowth/docs/TODO.md), which will call these once per cycle
+// see docs/TODO_crackgrowth.md), which will call these once per cycle
 // (or once per block of a spectrum) and integrate the resulting da/dN
 // into a crack-length history. Keeping this layer free of geometry
 // concerns means it's fully unit-testable against hand/textbook
@@ -65,7 +65,7 @@ function FormanRate(DeltaK, R, C, N, Kc: Double): Double;
 // Reference form (Newman 1984; same form documented in the NASGRO
 // manual) -- cross-checked against an independently written Python
 // reference during development (see this unit's own header comment
-// and crackgrowth/docs/TODO.md), but treat the FORM ITSELF as worth an
+// and docs/TODO_crackgrowth.md), but treat the FORM ITSELF as worth an
 // independent check against the actual NASGRO documentation before
 // relying on it for real work:
 //   A0 = (0.825 - 0.34*Alpha + 0.05*Alpha^2) * cos(pi/2 * S)^(1/Alpha)
@@ -81,7 +81,7 @@ function FormanRate(DeltaK, R, C, N, Kc: Double): Double;
 // cycles, gust and landing loads), and an exception there would abort a
 // cycle-by-cycle integration. NOTE this R < -2 branch is from memory of
 // the NASGRO documentation -- confirm against the manual with the rest of
-// the closure form (see crackgrowth/docs/TODO.md).
+// the closure form (see docs/TODO_crackgrowth.md).
 function NewmanClosureF(R, SmaxOverSigma0, Alpha: Double): Double;
 
 // da/dN = C * (((1-f)/(1-R)) * DeltaK)^N * (1-DeltaKth/DeltaK)^P
@@ -225,7 +225,7 @@ begin
   // not-yet-built K-solution layer). For now this uses Mat.NasgroAlpha
   // together with a fixed placeholder S=0.3 -- WRONG for anything but
   // illustration, and flagged loudly rather than silently: see
-  // crackgrowth/docs/TODO.md. Once the K-solution layer exists, this
+  // docs/TODO_crackgrowth.md. Once the K-solution layer exists, this
   // parameter list needs SmaxOverSigma0 added explicitly, the same way
   // DeltaK/Kmax/R already are, rather than buried inside Mat.
   f := NewmanClosureF(R, 0.3, Mat.NasgroAlpha);

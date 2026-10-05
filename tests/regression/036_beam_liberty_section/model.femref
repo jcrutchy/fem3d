@@ -7,7 +7,7 @@ Units=SI (N, m, Pa, rad)
 
 [REFERENCES]
 # name, kind, source, designation
-ub, section, ../../../prop/liberty_db.json, 200 UB 25.4
+ub, section, ../../../db/liberty_db.json, 200 UB 25.4
 
 [NODES]
 # id, x, y, z
