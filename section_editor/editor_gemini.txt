@@ -1,0 +1,8 @@
+### Features Included:
+
+1. **FEM3DGEO 1.0 Spec Compliance**: Generates `.fgeo` header metadata (`UNITS`, `COORDSYS`, `TOLERANCE`, `SOURCE`), topologically connected `VERTEX`, `CURVE` (LINE / CIRCLE / ARC3), `EDGE`, `LOOP`, `SURFACE` (plane at local axis position and orientation), `FACE` (outer and inner hole loops), `BODY`, and `SET` records.
+2. **Local Coordinate System & Orientation**: Visualizes $x_L$ and $y_L$ local axes on canvas with editable origin $(x_L, y_L)$ and orientation angle $\theta$. Includes quick actions to snap local axes to section centroid and align with principal moment angle $\theta_p$.
+3. **Geometry Validation Engine**: Live real-time checking for open loops (`GEO004`), degenerate/zero-length segments (`GEO008`), reversed loop orientation (`GEO005`), and automatic one-click fix buttons.
+4. **Sectional Properties Calculator**: Live calculation of total area $A$, centroid coordinates $(X_c, Y_c)$, second moments of area ($I_{xx}, I_{yy}, I_{xy}$), principal moments ($I_1, I_2, \theta_p$), and radii of gyration ($r_x, r_y$).
+5. **AutoCAD Style CAD UX**: Dark engineering theme, high-DPI canvas, dynamic crosshairs with coordinate HUD tracker, snapping modes (Grid, Endpoint, Midpoint, Center, Ortho), drawing tools (Polyline, Rect, Circle, Arc), and parametric profile generators (I-Beam, RHS/Box, Pipe/CHS, Channel, Angle, Solid Rect).
+6. **DXF Vector Exporter**: Generates ASCII DXF format containing `HEADER`, `TABLES`, `BLOCKS`, and `ENTITIES` (`LWPOLYLINE`, `CIRCLE`, `LINE`).

@@ -1,0 +1,43 @@
+# Cantilever with its section taken from the Liberty catalogue (200 UB 25.4).
+# model.fem is this file after:  femresolve model.femref > model.fem
+# (run_resolve_test checks that the two stay in step.)
+[HEADER]
+Solver=linstatic
+Units=SI (N, m, Pa, rad)
+
+[REFERENCES]
+# name, kind, source, designation
+ub, section, ../../../prop/liberty_db.json, 200 UB 25.4
+
+[NODES]
+# id, x, y, z
+1, 0, 0, 0
+2, 3, 0, 0
+
+[MATERIALS]
+# id, E, nu, rho
+1, 200000000000, 0.3, -
+
+[PROPERTIES]
+# id, type, material, section
+1, beam, 1, @ub
+
+[ELEMENTS]
+# id, type, node1, node2, property
+1, beam, 1, 2, 1
+
+[FREEDOMCASE default]
+# node, dof, value
+1, x, 0
+1, y, 0
+1, z, 0
+1, rx, 0
+1, ry, 0
+1, rz, 0
+
+[LOADCASE default]
+# node, dof, value
+2, y, -1000
+
+[SOLVERPARAMS]
+Tolerance=1E-9

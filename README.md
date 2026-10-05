@@ -114,6 +114,10 @@ third-party dependencies — only the FPC standard RTL (`fpjson`,
   - `adapt_json` — converts a JSON model (the format this suite used to
     read directly, before the native format existed) into native `.fem`.
     `adapt_json old.json | linstatic -`.
+  - `femresolve` — resolves a `.femref` (a model that refers to a section
+    catalogue or a `femsection` `.prop` file) into a plain `.fem` with the
+    referenced values copied in; solvers never read references. See
+    `docs/femref.md`. `femresolve model.femref | linstatic -`.
 - **Tools**, under `src/tools/<name>/`:
   - `fem_regress` — the regression test harness (see
     `docs/regression_testing.md`). Runs manifest-declared cases, checks
@@ -144,6 +148,9 @@ fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
 fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
     src/adaptors/adapt_json/adapt_json.lpr
 
+fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common -Fu./prop/src/common \
+    src/adaptors/femresolve/femresolve.lpr
+
 fpc -MObjFPC -Sh -O2 -FE./bin -FU./bin -Fu./src/common \
     src/tools/fem_regress/fem_regress.lpr
 ```
@@ -165,6 +172,7 @@ cat tests/regression/001_single_bar/model.fem | ./bin/linstatic -   # stdin work
 FEM_THREADS=8 ./bin/linsparse some_large_model.fem   # see docs/linsparse.md before relying on this for speed
 
 ./bin/adapt_json some_old_model.json > model.fem   # bring in a JSON model
+./bin/femresolve model.femref > model.fem          # resolve section references (docs/femref.md)
 
 ./bin/fem_regress tests/regression --bin bin        # run every regression case
 ```

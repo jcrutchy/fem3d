@@ -45,10 +45,19 @@ An adaptor should *not*:
 - Try to be a universal converter between arbitrary formats. One adaptor,
   one source format, one direction (foreign -> canonical).
 
+## References are resolved by an adaptor too
+
+A model may refer to data kept elsewhere (a section catalogue, a section file,
+eventually a materials library). `femresolve` is the adaptor that takes such a
+`.femref` and writes the plain `.fem` with every value copied in, so solvers
+still never open another file and the model's fingerprint covers the numbers
+used. See `docs/femref.md`.
+
 ## Suggested layout
 
 ```
 src/adaptors/adapt_json/adapt_json.lpr        (built)
+src/adaptors/femresolve/femresolve.lpr        (built; engine in prop/src/common/fem_resolve.pas)
 src/adaptors/adapt_strand7/adapt_strand7.lpr  (not started)
 src/adaptors/adapt_<next-format>/...
 ```
@@ -61,6 +70,9 @@ being copy-pasted. `adapt_json` itself already reuses `fem_json_model.pas`
 and `fem_native_writer.pas`.
 
 ## Status
+
+`femresolve` is built: `.femref` (references to section files and section
+catalogues) to `.fem`. See `docs/femref.md`.
 
 `adapt_json` is built -- every model in `tests/regression/` was converted
 from its original JSON form this way, and both the original `.json` and

@@ -123,6 +123,10 @@ adapt_json old_model.json > model.fem
 linstatic model.fem
 ```
 
+A model that refers to a section catalogue or a section file is saved as a
+`.femref` and turned into a plain `.fem` by `femresolve` first; solvers refuse
+references (see `docs/femref.md`).
+
 `fem_native_model.pas` (the parser) and `fem_native_writer.pas` (the
 writer, used by `adapt_json`) share the exact same `LoadModelFromStream`
 / `LoadModelFromFile` / `LoadModelFromStdin` function signatures as the

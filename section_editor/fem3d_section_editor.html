@@ -1,0 +1,2408 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full bg-slate-900 text-slate-100">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FEM3D Engineering Section Editor</title>
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+  
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
+    
+    body {
+      font-family: 'Inter', sans-serif;
+      overflow: hidden;
+      user-select: none;
+    }
+
+    .font-mono {
+      font-family: 'JetBrains Mono', ui-monospace, Consolas, monospace;
+    }
+
+    /* Custom Scrollbars */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #0f172a;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #334155;
+      border-radius: 3px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #475569;
+    }
+
+    .cad-canvas {
+      cursor: crosshair;
+      touch-action: none;
+    }
+
+    .tool-btn {
+      transition: all 0.15s ease-in-out;
+    }
+    .tool-btn.active {
+      background-color: #0284c7;
+      color: #ffffff;
+      border-color: #38bdf8;
+      box-shadow: 0 0 10px rgba(56, 189, 248, 0.4);
+    }
+
+    /* Modal Backdrop Blur */
+    .modal-backdrop {
+      background-color: rgba(15, 23, 42, 0.8);
+      backdrop-filter: blur(4px);
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col bg-slate-950 text-slate-200 select-none">
+
+  <header class="h-14 bg-slate-900 border-b border-slate-800 flex items-center justify-between px-4 z-20 shrink-0">
+    <!-- Logo & Title -->
+    <div class="flex items-center space-x-3">
+      <div class="bg-sky-600 text-white p-2 rounded-lg shadow-lg flex items-center justify-center w-9 h-9">
+        <i class="fa-solid me-0 fa-drafting-compass text-lg"></i>
+      </div>
+      <div>
+        <h1 class="font-bold text-sm leading-none text-white tracking-wide">FEM3D Section Editor</h1>
+        <p class="text-[10px] text-sky-400 font-mono mt-0.5">2D Cross-Section & Geometry Studio v1.0</p>
+      </div>
+    </div>
+
+    <!-- Main Command Buttons -->
+    <div class="flex items-center space-x-2">
+      <!-- Undo / Redo -->
+      <div class="flex bg-slate-800 rounded-lg p-1 border border-slate-700">
+        <button id="btnUndo" class="px-2.5 py-1 text-xs text-slate-300 hover:text-white disabled:opacity-40 disabled:hover:text-slate-300" title="Undo (Ctrl+Z)">
+          <i class="fa-solid fa-rotate-left mr-1"></i> Undo
+        </button>
+        <button id="btnRedo" class="px-2.5 py-1 text-xs text-slate-300 hover:text-white disabled:opacity-40 disabled:hover:text-slate-300" title="Redo (Ctrl+Y)">
+          <i class="fa-solid fa-rotate-right mr-1"></i> Redo
+        </button>
+      </div>
+
+      <div class="h-5 w-px bg-slate-800"></div>
+
+      <!-- Presets & View Controls -->
+      <button id="btnOpenPresets" class="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-medium text-slate-200 flex items-center shadow-sm">
+        <i class="fa-solid fa-shapes text-sky-400 mr-2"></i> Parametric Presets
+      </button>
+
+      <button id="btnZoomFit" class="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-xs font-medium text-slate-300 flex items-center" title="Zoom Extents (Fit View)">
+        <i class="fa-solid fa-expand text-slate-400 mr-1.5"></i> Fit View
+      </button>
+
+      <button id="btnClearAll" class="px-2.5 py-1.5 bg-rose-950/40 hover:bg-rose-900/60 border border-rose-800/50 rounded-lg text-xs font-medium text-rose-300 flex items-center" title="Clear Canvas">
+        <i class="fa-solid fa-trash-can mr-1.5"></i> Clear
+      </button>
+
+      <div class="h-5 w-px bg-slate-800"></div>
+
+      <!-- Export Buttons -->
+      <button id="btnExport" class="px-3.5 py-1.5 bg-sky-600 hover:bg-sky-500 text-white rounded-lg text-xs font-semibold flex items-center shadow-md shadow-sky-900/30 transition-all">
+        <i class="fa-solid fa-file-export mr-2"></i> Export Code (.fgeo / .dxf)
+      </button>
+
+      <button id="btnHelp" class="w-8 h-8 bg-slate-800 hover:bg-slate-700 border border-slate-700 rounded-lg text-slate-400 hover:text-white flex items-center justify-center text-sm" title="Shortcuts & Help (?)">
+        <i class="fa-solid fa-circle-question"></i>
+      </button>
+    </div>
+  </header>
+
+  <div class="h-9 bg-slate-900/90 border-b border-slate-800/80 px-4 flex items-center justify-between text-xs shrink-0 z-10">
+    <!-- Object Snaps -->
+    <div class="flex items-center space-x-3">
+      <span class="text-slate-400 text-[11px] font-medium uppercase tracking-wider">Object Snaps:</span>
+      <label class="flex items-center space-x-1.5 cursor-pointer text-slate-300 hover:text-white">
+        <input type="checkbox" id="snapGrid" checked class="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 focus:ring-offset-0">
+        <span>Grid</span>
+      </label>
+      <label class="flex items-center space-x-1.5 cursor-pointer text-slate-300 hover:text-white">
+        <input type="checkbox" id="snapEndpoint" checked class="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 focus:ring-offset-0">
+        <span>Endpoint</span>
+      </label>
+      <label class="flex items-center space-x-1.5 cursor-pointer text-slate-300 hover:text-white">
+        <input type="checkbox" id="snapMidpoint" checked class="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 focus:ring-offset-0">
+        <span>Midpoint</span>
+      </label>
+      <label class="flex items-center space-x-1.5 cursor-pointer text-slate-300 hover:text-white">
+        <input type="checkbox" id="snapCenter" checked class="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 focus:ring-offset-0">
+        <span>Center</span>
+      </label>
+      <label class="flex items-center space-x-1.5 cursor-pointer text-slate-300 hover:text-white">
+        <input type="checkbox" id="toggleOrtho" class="rounded bg-slate-800 border-slate-700 text-sky-500 focus:ring-0 focus:ring-offset-0">
+        <span class="font-medium text-amber-400">Ortho (F8)</span>
+      </label>
+    </div>
+
+    <!-- Units & Grid Spacing -->
+    <div class="flex items-center space-x-4">
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">Grid Size:</span>
+        <input type="number" id="inputGridSize" value="10" min="1" max="500" class="w-14 bg-slate-800 border border-slate-700 rounded px-1.5 py-0.5 text-slate-200 font-mono text-xs focus:border-sky-500 focus:outline-none">
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-400">Units:</span>
+        <select id="selectUnits" class="bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-slate-200 font-mono text-xs focus:border-sky-500 focus:outline-none">
+          <option value="MM">mm</option>
+          <option value="CM">cm</option>
+          <option value="M">m</option>
+          <option value="IN">in</option>
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="flex-1 flex min-h-0 relative">
+
+    <!-- Left CAD Tools Toolbar -->
+    <div class="w-14 bg-slate-900 border-r border-slate-800 flex flex-col items-center py-3 space-y-2 z-10 shrink-0">
+      <button data-tool="select" class="tool-btn active w-10 h-10 rounded-lg border border-slate-700 flex flex-col items-center justify-center text-slate-300 hover:text-white" title="Select / Multi-Select (S)">
+        <i class="fa-solid fa-arrow-pointer text-sm"></i>
+        <span class="text-[9px] mt-0.5 font-mono">Select</span>
+      </button>
+
+      <button data-tool="line" class="tool-btn w-10 h-10 rounded-lg border border-slate-700 flex flex-col items-center justify-center text-slate-300 hover:text-white" title="Polyline / Line Tool (L)">
+        <i class="fa-solid fa-pen-nib text-sm"></i>
+        <span class="text-[9px] mt-0.5 font-mono">Line</span>
+      </button>
+
+      <button data-tool="rect" class="tool-btn w-10 h-10 rounded-lg border border-slate-700 flex flex-col items-center justify-center text-slate-300 hover:text-white" title="Rectangle Tool (R)">
+        <i class="fa-regular fa-square text-sm"></i>
+        <span class="text-[9px] mt-0.5 font-mono">Rect</span>
+      </button>
+
+      <button data-tool="circle" class="tool-btn w-10 h-10 rounded-lg border border-slate-700 flex flex-col items-center justify-center text-slate-300 hover:text-white" title="Circle Tool (C)">
+        <i class="fa-regular fa-circle text-sm"></i>
+        <span class="text-[9px] mt-0.5 font-mono">Circle</span>
+      </button>
+
+      <button data-tool="arc" class="tool-btn w-10 h-10 rounded-lg border border-slate-700 flex flex-col items-center justify-center text-slate-300 hover:text-white" title="3-Point Arc Tool (A)">
+        <i class="fa-solid fa-bezier-curve text-sm"></i>
+        <span class="text-[9px] mt-0.5 font-mono">Arc</span>
+      </button>
+
+      <div class="w-8 h-px bg-slate-800 my-1"></div>
+
+      <button data-tool="localframe" class="tool-btn w-10 h-10 rounded-lg border border-slate-700 flex flex-col items-center justify-center text-slate-300 hover:text-white" title="Position Local Coordinate Axes (O)">
+        <i class="fa-solid fa-compass-drafting text-sm text-emerald-400"></i>
+        <span class="text-[9px] mt-0.5 font-mono">Local</span>
+      </button>
+
+      <button data-tool="pan" class="tool-btn w-10 h-10 rounded-lg border border-slate-700 flex flex-col items-center justify-center text-slate-300 hover:text-white" title="Pan Canvas (P / Space)">
+        <i class="fa-solid fa-hand text-sm"></i>
+        <span class="text-[9px] mt-0.5 font-mono">Pan</span>
+      </button>
+    </div>
+
+    <!-- Central CAD Canvas -->
+    <div class="flex-1 h-full relative bg-slate-950 overflow-hidden flex items-center justify-center" id="canvasContainer">
+      <canvas id="cadCanvas" class="cad-canvas absolute inset-0 w-full h-full"></canvas>
+
+      <!-- Floating Dynamic Input Coordinate Box -->
+      <div id="dynamicInput" class="absolute hidden bg-slate-900/90 border border-sky-500/80 rounded-md px-2.5 py-1 text-xs text-sky-200 font-mono shadow-xl pointer-events-none z-20 flex items-center space-x-2">
+        <span id="dynLength">L: 0.00</span>
+        <span id="dynAngle" class="text-amber-300">∠ 0.0°</span>
+      </div>
+    </div>
+
+    <div class="w-80 bg-slate-900 border-l border-slate-800 flex flex-col z-10 shrink-0">
+      
+      <!-- Panel Tabs Header -->
+      <div class="flex border-b border-slate-800 text-xs font-medium">
+        <button id="tabProps" class="flex-1 py-2.5 text-sky-400 border-b-2 border-sky-500 font-semibold text-center bg-slate-800/50">
+          Properties
+        </button>
+        <button id="tabInspect" class="flex-1 py-2.5 text-slate-400 border-b-2 border-transparent hover:text-slate-200 text-center">
+          Selection
+        </button>
+        <button id="tabDiag" class="flex-1 py-2.5 text-slate-400 border-b-2 border-transparent hover:text-slate-200 text-center flex items-center justify-center space-x-1">
+          <span>Health</span>
+          <span id="diagBadge" class="bg-emerald-500/20 text-emerald-400 text-[10px] px-1.5 py-0.2 rounded-full border border-emerald-500/30 font-mono">OK</span>
+        </button>
+      </div>
+
+      <div id="panelProps" class="flex-1 overflow-y-auto p-4 space-y-4">
+        <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700/60 space-y-2">
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-slate-400 font-medium">Total Area (A):</span>
+            <span id="propArea" class="font-mono font-bold text-sky-300">0.00 mm²</span>
+          </div>
+          <div class="flex items-center justify-between text-xs">
+            <span class="text-slate-400 font-medium">Centroid (Xc, Yc):</span>
+            <span id="propCentroid" class="font-mono text-slate-200">(0.00, 0.00)</span>
+          </div>
+        </div>
+
+        <!-- Second Moments of Area -->
+        <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700/60 space-y-2">
+          <h3 class="text-xs font-semibold text-slate-300 uppercase tracking-wider border-b border-slate-700/60 pb-1.5">Moments of Inertia</h3>
+          
+          <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+            <div>
+              <span class="text-slate-400 text-[10px] block">Ixx (Centroidal)</span>
+              <span id="propIxx" class="text-slate-100 font-medium">0.00</span>
+            </div>
+            <div>
+              <span class="text-slate-400 text-[10px] block">Iyy (Centroidal)</span>
+              <span id="propIyy" class="text-slate-100 font-medium">0.00</span>
+            </div>
+            <div>
+              <span class="text-slate-400 text-[10px] block">Ixy (Product)</span>
+              <span id="propIxy" class="text-slate-100 font-medium">0.00</span>
+            </div>
+            <div>
+              <span class="text-slate-400 text-[10px] block">θp (Principal Angle)</span>
+              <span id="propThetaP" class="text-amber-300 font-medium">0.0°</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Principal Moments & Radii of Gyration -->
+        <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700/60 space-y-2">
+          <h3 class="text-xs font-semibold text-slate-300 uppercase tracking-wider border-b border-slate-700/60 pb-1.5">Principal & Gyration</h3>
+          
+          <div class="grid grid-cols-2 gap-2 text-xs font-mono">
+            <div>
+              <span class="text-slate-400 text-[10px] block">I1 (Max Principal)</span>
+              <span id="propI1" class="text-emerald-400 font-medium">0.00</span>
+            </div>
+            <div>
+              <span class="text-slate-400 text-[10px] block">I2 (Min Principal)</span>
+              <span id="propI2" class="text-emerald-400 font-medium">0.00</span>
+            </div>
+            <div>
+              <span class="text-slate-400 text-[10px] block">rx (Gyration X)</span>
+              <span id="propRx" class="text-slate-200">0.00</span>
+            </div>
+            <div>
+              <span class="text-slate-400 text-[10px] block">ry (Gyration Y)</span>
+              <span id="propRy" class="text-slate-200">0.00</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Local Frame Controls -->
+        <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700/60 space-y-3">
+          <h3 class="text-xs font-semibold text-emerald-400 uppercase tracking-wider border-b border-slate-700/60 pb-1.5 flex items-center justify-between">
+            <span>Local Coordinate Axes</span>
+            <i class="fa-solid fa-compass-drafting"></i>
+          </h3>
+
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div>
+              <label class="text-slate-400 text-[10px] block mb-0.5">Origin X (xL0)</label>
+              <input type="number" id="inputLocalX" value="0" step="any" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono focus:border-sky-500 focus:outline-none">
+            </div>
+            <div>
+              <label class="text-slate-400 text-[10px] block mb-0.5">Origin Y (yL0)</label>
+              <input type="number" id="inputLocalY" value="0" step="any" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-100 font-mono focus:border-sky-500 focus:outline-none">
+            </div>
+          </div>
+
+          <div>
+            <label class="text-slate-400 text-[10px] block mb-0.5">Axis Rotation Angle θ (°)</label>
+            <input type="number" id="inputLocalTheta" value="0" step="any" class="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-amber-300 font-mono focus:border-sky-500 focus:outline-none">
+          </div>
+
+          <div class="flex space-x-2 pt-1">
+            <button id="btnSnapCentroid" class="flex-1 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-[11px] font-medium text-slate-200 transition">
+              Snap to Centroid
+            </button>
+            <button id="btnAlignPrincipal" class="flex-1 py-1.5 bg-slate-700 hover:bg-slate-600 rounded text-[11px] font-medium text-amber-300 transition">
+              Align to θp
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="panelInspect" class="flex-1 overflow-y-auto p-4 space-y-4 hidden">
+        <div id="inspectEmpty" class="text-center py-10 text-slate-500 text-xs">
+          <i class="fa-solid fa-hand-pointer text-3xl mb-2 text-slate-600 block"></i>
+          Select geometry elements on the canvas to inspect and edit.
+        </div>
+
+        <div id="inspectContent" class="space-y-4 hidden">
+          <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700/60 space-y-2">
+            <div class="flex items-center justify-between border-b border-slate-700/60 pb-2">
+              <span id="inspectType" class="font-bold text-sky-400 text-xs">Loop #1</span>
+              <span id="inspectOrientation" class="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">CCW (Outer)</span>
+            </div>
+
+            <div class="space-y-1.5 text-xs font-mono pt-1">
+              <div class="flex justify-between text-slate-400">
+                <span>Vertices:</span>
+                <span id="inspectVertCount" class="text-slate-200">4</span>
+              </div>
+              <div class="flex justify-between text-slate-400">
+                <span>Signed Area:</span>
+                <span id="inspectArea" class="text-slate-200">1000.00</span>
+              </div>
+              <div class="flex justify-between text-slate-400">
+                <span>Perimeter:</span>
+                <span id="inspectPerim" class="text-slate-200">140.00</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Modification Actions -->
+          <div class="bg-slate-800/60 rounded-xl p-3 border border-slate-700/60 space-y-2">
+            <h3 class="text-xs font-semibold text-slate-300 uppercase tracking-wider mb-2">Loop Actions</h3>
+            
+            <button id="btnToggleHole" class="w-full py-1.5 bg-sky-950/60 hover:bg-sky-900/80 border border-sky-700/60 text-sky-300 rounded text-xs font-medium flex items-center justify-center space-x-2">
+              <i class="fa-solid fa-circle-half-stroke"></i>
+              <span>Toggle Hole / Outer Status</span>
+            </button>
+
+            <button id="btnReverseOrientation" class="w-full py-1.5 bg-slate-700 hover:bg-slate-600 border border-slate-600 text-slate-200 rounded text-xs font-medium flex items-center justify-center space-x-2">
+              <i class="fa-solid fa-arrow-rotate-right"></i>
+              <span>Reverse Orientation (CCW ↔ CW)</span>
+            </button>
+
+            <button id="btnDeleteSelected" class="w-full py-1.5 bg-rose-950/60 hover:bg-rose-900/80 border border-rose-800/60 text-rose-300 rounded text-xs font-medium flex items-center justify-center space-x-2">
+              <i class="fa-solid fa-trash-can"></i>
+              <span>Delete Selected</span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="panelDiag" class="flex-1 overflow-y-auto p-4 space-y-4 hidden">
+        <div class="flex items-center justify-between">
+          <h3 class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Geometry Health Diagnostics</h3>
+          <button id="btnAutoFixAll" class="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded shadow transition">
+            Auto-Fix All
+          </button>
+        </div>
+
+        <div class="space-y-2 text-xs" id="diagList">
+          <!-- Live diagnostics list rendered here -->
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <footer class="h-8 bg-slate-900 border-t border-slate-800 px-4 flex items-center justify-between text-xs font-mono text-slate-400 shrink-0 z-20">
+    <div class="flex items-center space-x-2 truncate mr-4">
+      <span class="text-sky-400 font-bold">COMMAND:</span>
+      <span id="cmdPromptText" class="text-slate-200">Select tool or click on canvas to start drawing...</span>
+    </div>
+
+    <div class="flex items-center space-x-4 shrink-0">
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-500">X:</span>
+        <span id="lblCursorX" class="text-slate-200 w-16 text-right">0.00</span>
+      </div>
+      <div class="flex items-center space-x-1.5">
+        <span class="text-slate-500">Y:</span>
+        <span id="lblCursorY" class="text-slate-200 w-16 text-right">0.00</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- MODAL: Parametric Presets -->
+  <div id="modalPresets" class="fixed inset-0 modal-backdrop hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]">
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-800/40">
+        <h2 class="text-base font-bold text-white flex items-center">
+          <i class="fa-solid fa-shapes text-sky-400 mr-2.5"></i> Parametric Member Generator
+        </h2>
+        <button class="closeModal text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="p-6 overflow-y-auto flex-1 grid grid-cols-1 md:grid-cols-2 gap-6">
+        <!-- Preset Controls -->
+        <div class="space-y-4">
+          <div>
+            <label class="text-xs font-semibold text-slate-400 uppercase tracking-wider block mb-1">Section Profile Type</label>
+            <select id="presetType" class="w-full bg-slate-800 border border-slate-700 rounded-lg p-2 text-sm text-slate-100 font-medium focus:border-sky-500 focus:outline-none">
+              <option value="I_BEAM">I-Beam / Universal Beam (UB)</option>
+              <option value="RHS">RHS (Rectangular Hollow Box)</option>
+              <option value="CHS">CHS (Circular Pipe / Ring)</option>
+              <option value="PFC">PFC (Parallel Flange Channel)</option>
+              <option value="ANGLE">Angle Section (L-Shape)</option>
+              <option value="RECT_SOLID">Solid Rectangle</option>
+              <option value="CIRCLE_SOLID">Solid Circle</option>
+            </select>
+          </div>
+
+          <!-- Dynamic Preset Parameters Form -->
+          <div id="presetParams" class="space-y-3 bg-slate-800/50 p-4 rounded-xl border border-slate-700/60">
+            <!-- Parameter inputs populated dynamically -->
+          </div>
+
+          <!-- Validation Error Alert -->
+          <div id="presetError" class="hidden bg-rose-950/60 border border-rose-800/80 rounded-lg p-3 text-xs text-rose-300 font-medium flex items-center space-x-2">
+            <i class="fa-solid fa-triangle-exclamation text-rose-400 text-sm shrink-0"></i>
+            <span id="presetErrorMsg">Invalid dimensions!</span>
+          </div>
+        </div>
+
+        <!-- Live Preset Visual Preview -->
+        <div class="flex flex-col items-center justify-center bg-slate-950 rounded-xl border border-slate-800 p-4 relative min-h-[220px]">
+          <span class="absolute top-2 left-3 text-[10px] font-mono text-slate-500 uppercase tracking-widest">Section Preview</span>
+          <svg id="presetPreviewSvg" class="w-full h-48" viewBox="-100 -100 200 200"></svg>
+        </div>
+      </div>
+
+      <div class="px-6 py-3.5 bg-slate-800/40 border-t border-slate-800 flex justify-end space-x-3">
+        <button class="closeModal px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-medium text-slate-300">Cancel</button>
+        <button id="btnGeneratePreset" class="px-5 py-2 bg-sky-600 hover:bg-sky-500 rounded-lg text-xs font-semibold text-white shadow-lg">Generate Section</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Export Code (.fgeo & .dxf) -->
+  <div id="modalExport" class="fixed inset-0 modal-backdrop hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-3xl shadow-2xl overflow-hidden flex flex-col h-[80vh]">
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-800/40">
+        <div class="flex items-center space-x-4">
+          <h2 class="text-base font-bold text-white flex items-center">
+            <i class="fa-solid fa-file-export text-sky-400 mr-2.5"></i> Export Cross-Section File
+          </h2>
+          <div class="flex bg-slate-800 p-1 rounded-lg border border-slate-700 text-xs">
+            <button id="tabFgeo" class="px-3 py-1 rounded-md bg-sky-600 text-white font-semibold">FEM3DGEO 1.0 (.fgeo)</button>
+            <button id="tabDxf" class="px-3 py-1 rounded-md text-slate-400 hover:text-slate-200">DXF Format (.dxf)</button>
+          </div>
+        </div>
+        <button class="closeModal text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="p-4 flex-1 bg-slate-950 font-mono text-xs overflow-y-auto relative">
+        <textarea id="exportCodePreview" readonly class="w-full h-full bg-transparent text-emerald-400 border-0 focus:ring-0 focus:outline-none resize-none font-mono text-xs leading-relaxed select-text"></textarea>
+      </div>
+
+      <div class="px-6 py-3.5 bg-slate-800/40 border-t border-slate-800 flex items-center justify-between">
+        <button id="btnCopyCode" class="px-3.5 py-1.5 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-lg text-xs font-medium flex items-center">
+          <i class="fa-regular fa-copy mr-2"></i> Copy to Clipboard
+        </button>
+        <div class="flex space-x-3">
+          <button class="closeModal px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg text-xs font-medium text-slate-300">Close</button>
+          <button id="btnDownloadExport" class="px-5 py-2 bg-sky-600 hover:bg-sky-500 rounded-lg text-xs font-semibold text-white shadow-lg flex items-center">
+            <i class="fa-solid fa-download mr-2"></i> Download File
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: Hotkeys & Help -->
+  <div id="modalHelp" class="fixed inset-0 modal-backdrop hidden z-50 flex items-center justify-center p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col">
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center justify-between bg-slate-800/40">
+        <h2 class="text-base font-bold text-white flex items-center">
+          <i class="fa-solid fa-keyboard text-sky-400 mr-2.5"></i> Keyboard Shortcuts & Guide
+        </h2>
+        <button class="closeModal text-slate-400 hover:text-white text-lg"><i class="fa-solid fa-xmark"></i></button>
+      </div>
+
+      <div class="p-6 space-y-4 text-xs">
+        <div class="grid grid-cols-2 gap-3 font-mono">
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-700/60 flex justify-between items-center">
+            <span class="text-slate-400">Select Tool</span>
+            <kbd class="px-2 py-0.5 bg-slate-700 text-sky-300 rounded border border-slate-600">S</kbd>
+          </div>
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-700/60 flex justify-between items-center">
+            <span class="text-slate-400">Line / Polyline</span>
+            <kbd class="px-2 py-0.5 bg-slate-700 text-sky-300 rounded border border-slate-600">L</kbd>
+          </div>
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-700/60 flex justify-between items-center">
+            <span class="text-slate-400">Rectangle</span>
+            <kbd class="px-2 py-0.5 bg-slate-700 text-sky-300 rounded border border-slate-600">R</kbd>
+          </div>
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-700/60 flex justify-between items-center">
+            <span class="text-slate-400">Circle</span>
+            <kbd class="px-2 py-0.5 bg-slate-700 text-sky-300 rounded border border-slate-600">C</kbd>
+          </div>
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-700/60 flex justify-between items-center">
+            <span class="text-slate-400">3-Point Arc</span>
+            <kbd class="px-2 py-0.5 bg-slate-700 text-sky-300 rounded border border-slate-600">A</kbd>
+          </div>
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-700/60 flex justify-between items-center">
+            <span class="text-slate-400">Pan Tool</span>
+            <kbd class="px-2 py-0.5 bg-slate-700 text-sky-300 rounded border border-slate-600">P / Space</kbd>
+          </div>
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-700/60 flex justify-between items-center">
+            <span class="text-slate-400">Ortho Lock</span>
+            <kbd class="px-2 py-0.5 bg-slate-700 text-amber-300 rounded border border-slate-600">F8 / Shift</kbd>
+          </div>
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-700/60 flex justify-between items-center">
+            <span class="text-slate-400">Delete Selected</span>
+            <kbd class="px-2 py-0.5 bg-slate-700 text-rose-300 rounded border border-slate-600">Del</kbd>
+          </div>
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-700/60 flex justify-between items-center">
+            <span class="text-slate-400">Undo Action</span>
+            <kbd class="px-2 py-0.5 bg-slate-700 text-slate-200 rounded border border-slate-600">Ctrl + Z</kbd>
+          </div>
+          <div class="bg-slate-800/50 p-2.5 rounded-lg border border-slate-700/60 flex justify-between items-center">
+            <span class="text-slate-400">Redo Action</span>
+            <kbd class="px-2 py-0.5 bg-slate-700 text-slate-200 rounded border border-slate-600">Ctrl + Y</kbd>
+          </div>
+        </div>
+
+        <div class="bg-sky-950/40 border border-sky-800/50 rounded-xl p-3 text-sky-200">
+          <h4 class="font-bold mb-1">Topological Rules & Auto-Nesting:</h4>
+          <p class="leading-relaxed">Outer profiles automatically orient Counter-Clockwise (CCW). Inner holes automatically orient Clockwise (CW). Double-click or press Enter to finalize polylines. Click the starting vertex to auto-close closed loops!</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // Application Geometry Data Structures & Global State
+    const App = {
+      // Units & Grid
+      units: 'MM',
+      gridSize: 10,
+      
+      // Viewport & Pan/Zoom Transformation Matrix
+      view: {
+        zoom: 2.0,      // Scale factor (pixels per unit)
+        panX: 0,        // Canvas center offsets
+        panY: 0
+      },
+
+      // Local Frame Settings
+      localFrame: {
+        x: 0,
+        y: 0,
+        theta: 0 // Angle in degrees
+      },
+
+      // Drawing Active Tool ('select', 'line', 'rect', 'circle', 'arc', 'pan', 'localframe')
+      activeTool: 'select',
+
+      // Snapping Options
+      snaps: {
+        grid: true,
+        endpoint: true,
+        midpoint: true,
+        center: true,
+        ortho: false
+      },
+
+      // Entities Data Store
+      // Vertices: array of { id, x, y }
+      vertices: [],
+      // Curves: array of { id, type: 'LINE'|'ARC3', v1, v2, vm?, center?, radius?, startAngle?, endAngle?, ccw? }
+      curves: [],
+      // Loops: array of { id, curves: [curveId, ...], isHole: boolean, manualHole: boolean|null }
+      loops: [],
+
+      // Selection State
+      selectedLoopIds: new Set(),
+      selectedVertexIds: new Set(),
+      boxSelection: null, // { x1, y1, x2, y2 }
+
+      // Active Drawing Workflow State
+      drawingState: {
+        points: [], // Array of temporary points during tool execution
+        activePolylineVerts: [], // Connected vertex IDs for current active line chain
+        activeCurveIds: []      // Curves created by the active polyline (removed again if cancelled)
+      },
+
+      // Pan Drag State
+      isPanning: false,
+      panStart: { x: 0, y: 0 },
+
+      // History Stack for Undo/Redo
+      history: [],
+      historyIndex: -1,
+      maxHistory: 50
+    };
+
+    const MathUtils = {
+      DEG2RAD: Math.PI / 180,
+      RAD2DEG: 180 / Math.PI,
+      EPSILON: 1e-6,
+
+      dist(p1, p2) {
+        return Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      },
+
+      // Calculate 3-Point Arc Center, Radius, and Angles
+      calcArc3Props(p1, pm, p2) {
+        const temp = pm.x * pm.x + pm.y * pm.y;
+        const bc = (p1.x * p1.x + p1.y * p1.y - temp) / 2;
+        const cd = (temp - p2.x * p2.x - p2.y * p2.y) / 2;
+        const det = (p1.x - pm.x) * (pm.y - p2.y) - (pm.x - p2.x) * (p1.y - pm.y);
+
+        if (Math.abs(det) < 1e-8) {
+          return null; // Collinear points cannot form a unique arc
+        }
+
+        const cx = (bc * (pm.y - p2.y) - cd * (p1.y - pm.y)) / det;
+        const cy = ((p1.x - pm.x) * cd - (pm.x - p2.x) * bc) / det;
+        const radius = Math.hypot(p1.x - cx, p1.y - cy);
+
+        let a1 = Math.atan2(p1.y - cy, p1.x - cx);
+        let am = Math.atan2(pm.y - cy, pm.x - cx);
+        let a2 = Math.atan2(p2.y - cy, p2.x - cx);
+
+        // Normalize angles to [0, 2PI)
+        const norm = a => (a < 0 ? a + 2 * Math.PI : a);
+        a1 = norm(a1); am = norm(am); a2 = norm(a2);
+
+        // Determine direction (CCW vs CW)
+        let ccw = false;
+        if (a1 < a2) {
+          ccw = (a1 < am && am < a2);
+        } else {
+          ccw = !(a2 < am && am < a1);
+        }
+
+        return { cx, cy, radius, a1, am, a2, ccw };
+      },
+
+      // Point in Polygon test for Auto-Nesting
+      pointInPolygon(point, polygonPoints) {
+        let inside = false;
+        for (let i = 0, j = polygonPoints.length - 1; i < polygonPoints.length; j = i++) {
+          const xi = polygonPoints[i].x, yi = polygonPoints[i].y;
+          const xj = polygonPoints[j].x, yj = polygonPoints[j].y;
+          const intersect = ((yi > point.y) !== (yj > point.y)) &&
+            (point.x < (xj - xi) * (point.y - yi) / (yj - yi) + xi);
+          if (intersect) inside = !inside;
+        }
+        return inside;
+      }
+    };
+
+    function saveHistory() {
+      // Truncate future stack if at intermediate state
+      if (App.historyIndex < App.history.length - 1) {
+        App.history = App.history.slice(0, App.historyIndex + 1);
+      }
+
+      const snapshot = JSON.stringify({
+        vertices: App.vertices,
+        curves: App.curves,
+        loops: App.loops,
+        localFrame: App.localFrame,
+        units: App.units
+      });
+
+      App.history.push(snapshot);
+      if (App.history.length > App.maxHistory) App.history.shift();
+      App.historyIndex = App.history.length - 1;
+
+      updateUndoRedoUI();
+      recalculateSectionProperties();
+      runGeometryDiagnostics();
+      renderCanvas();
+    }
+
+    function undo() {
+      if (App.historyIndex > 0) {
+        App.historyIndex--;
+        restoreHistoryState(App.history[App.historyIndex]);
+      }
+    }
+
+    function redo() {
+      if (App.historyIndex < App.history.length - 1) {
+        App.historyIndex++;
+        restoreHistoryState(App.history[App.historyIndex]);
+      }
+    }
+
+    function restoreHistoryState(jsonStr) {
+      const state = JSON.parse(jsonStr);
+      App.vertices = state.vertices || [];
+      App.curves = state.curves || [];
+      App.loops = state.loops || [];
+      App.localFrame = state.localFrame || { x: 0, y: 0, theta: 0 };
+      App.units = state.units || 'MM';
+
+      // Refresh Local Frame UI inputs
+      document.getElementById('inputLocalX').value = App.localFrame.x.toFixed(2);
+      document.getElementById('inputLocalY').value = App.localFrame.y.toFixed(2);
+      document.getElementById('inputLocalTheta').value = App.localFrame.theta.toFixed(2);
+      document.getElementById('selectUnits').value = App.units;
+
+      updateUndoRedoUI();
+      recalculateSectionProperties();
+      runGeometryDiagnostics();
+      renderCanvas();
+    }
+
+    function updateUndoRedoUI() {
+      document.getElementById('btnUndo').disabled = (App.historyIndex <= 0);
+      document.getElementById('btnRedo').disabled = (App.historyIndex >= App.history.length - 1);
+    }
+
+    function getVertex(id) {
+      return App.vertices.find(v => v.id === id);
+    }
+
+    function getCurve(id) {
+      return App.curves.find(c => c.id === id);
+    }
+
+    function addVertex(x, y) {
+      // Reuse existing vertex if within tolerance to preserve exact topology
+      const existing = App.vertices.find(v => Math.hypot(v.x - x, v.y - y) < 1e-4);
+      if (existing) return existing.id;
+
+      const newId = App.vertices.length > 0 ? Math.max(...App.vertices.map(v => v.id)) + 1 : 1;
+      App.vertices.push({ id: newId, x, y });
+      return newId;
+    }
+
+    function addCurveLine(v1Id, v2Id) {
+      const newId = App.curves.length > 0 ? Math.max(...App.curves.map(c => c.id)) + 1 : 1;
+      const curve = { id: newId, type: 'LINE', v1: v1Id, v2: v2Id };
+      App.curves.push(curve);
+      return newId;
+    }
+
+    function addCurveArc3(v1Id, vmId, v2Id) {
+      const p1 = getVertex(v1Id);
+      const pm = getVertex(vmId);
+      const p2 = getVertex(v2Id);
+      const props = MathUtils.calcArc3Props(p1, pm, p2);
+
+      const newId = App.curves.length > 0 ? Math.max(...App.curves.map(c => c.id)) + 1 : 1;
+      const curve = {
+        id: newId,
+        type: 'ARC3',
+        v1: v1Id,
+        vm: vmId,
+        v2: v2Id,
+        center: props ? { x: props.cx, y: props.cy } : null,
+        radius: props ? props.radius : 0,
+        ccw: props ? props.ccw : true
+      };
+      App.curves.push(curve);
+      return newId;
+    }
+
+    // Convert Loop Curves to Ordered Vertices Sequence
+    function getLoopPoints(loop, numDiscretizeArc = 32) {
+      const points = [];
+      if (!loop || !loop.curves || loop.curves.length === 0) return points;
+
+      for (let i = 0; i < loop.curves.length; i++) {
+        const c = getCurve(loop.curves[i]);
+        if (!c) continue;
+
+        const v1 = getVertex(c.v1);
+        const v2 = getVertex(c.v2);
+        if (!v1 || !v2) continue;
+
+        if (c.type === 'LINE') {
+          points.push({ x: v1.x, y: v1.y, vertId: v1.id });
+        } else if (c.type === 'ARC3') {
+          const vm = getVertex(c.vm);
+          if (vm) {
+            const props = MathUtils.calcArc3Props(v1, vm, v2);
+            if (props) {
+              // Discretize circular arc for area and rendering
+              let startA = props.a1;
+              let endA = props.a2;
+
+              if (props.ccw) {
+                if (endA <= startA) endA += 2 * Math.PI;
+              } else {
+                if (startA <= endA) startA += 2 * Math.PI;
+              }
+
+              const step = (endA - startA) / numDiscretizeArc;
+              for (let k = 0; k < numDiscretizeArc; k++) {
+                const ang = startA + k * step;
+                points.push({
+                  x: props.cx + props.radius * Math.cos(ang),
+                  y: props.cy + props.radius * Math.sin(ang)
+                });
+              }
+            } else {
+              points.push({ x: v1.x, y: v1.y, vertId: v1.id });
+            }
+          }
+        }
+      }
+
+      return points;
+    }
+
+    // Calculate Signed Polygon Area (Shoelace Formula)
+    function calcSignedArea(points) {
+      if (points.length < 3) return 0;
+      let area = 0;
+      for (let i = 0; i < points.length; i++) {
+        const j = (i + 1) % points.length;
+        area += (points[i].x * points[j].y) - (points[j].x * points[i].y);
+      }
+      return area / 2.0;
+    }
+
+    // Automatic Nesting Detection & Topological Classification
+    function autoDetectHolesAndOrientations() {
+      if (App.loops.length === 0) return;
+
+      const loopData = App.loops.map(loop => {
+        const points = getLoopPoints(loop);
+        const signedArea = calcSignedArea(points);
+        return {
+          loop,
+          points,
+          signedArea,
+          absArea: Math.abs(signedArea),
+          depth: 0
+        };
+      });
+
+      // Compute nesting depths by testing if points lie inside other loops
+      for (let i = 0; i < loopData.length; i++) {
+        for (let j = 0; j < loopData.length; j++) {
+          if (i === j) continue;
+          if (loopData[j].points.length < 3) continue;
+
+          // Pick representative point from loop i
+          const pt = loopData[i].points[0];
+          if (pt && MathUtils.pointInPolygon(pt, loopData[j].points)) {
+            loopData[i].depth++;
+          }
+        }
+      }
+
+      // Depth odd = Hole (CW), Depth even = Outer Profile (CCW)
+      loopData.forEach(item => {
+        const isHole = (item.loop.manualHole !== null) ? item.loop.manualHole : (item.depth % 2 === 1);
+        item.loop.isHole = isHole;
+
+        // Ensure topological orientation rules: Outer CCW (+), Hole CW (-)
+        const targetCCW = !isHole; // Outer needs CCW (+ signed area), Hole needs CW (- signed area)
+        const currentCCW = item.signedArea > 0;
+
+        if (targetCCW !== currentCCW) {
+          // Reverse loop curves order and vertex directions
+          item.loop.curves.reverse();
+          item.loop.curves.forEach(cId => {
+            const c = getCurve(cId);
+            if (c) {
+              const temp = c.v1;
+              c.v1 = c.v2;
+              c.v2 = temp;
+            }
+          });
+        }
+      });
+    }
+
+    function recalculateSectionProperties() {
+      autoDetectHolesAndOrientations();
+
+      let totalA = 0;
+      let Qx = 0, Qy = 0;
+      let Ixx0 = 0, Iyy0 = 0, Ixy0 = 0;
+
+      App.loops.forEach(loop => {
+        const points = getLoopPoints(loop, 512); // Fine arc discretization (chord error ~1e-6 relative)
+        if (points.length < 3) return;
+
+        for (let i = 0; i < points.length; i++) {
+          const j = (i + 1) % points.length;
+          const p1 = points[i];
+          const p2 = points[j];
+
+          const cross = (p1.x * p2.y) - (p2.x * p1.y);
+
+          // Area contribution
+          totalA += cross / 2.0;
+
+          // First moments of area Qx, Qy
+          Qx += (p1.y + p2.y) * cross / 6.0;
+          Qy += (p1.x + p2.x) * cross / 6.0;
+
+          // Second moments of area about global origin (0,0)
+          Ixx0 += (p1.y * p1.y + p1.y * p2.y + p2.y * p2.y) * cross / 12.0;
+          Iyy0 += (p1.x * p1.x + p1.x * p2.x + p2.x * p2.x) * cross / 12.0;
+          Ixy0 += (p1.x * p2.y + 2 * p1.x * p1.y + 2 * p2.x * p2.y + p2.x * p1.y) * cross / 24.0;
+        }
+      });
+
+      if (Math.abs(totalA) < 1e-8) {
+        // Reset displayed properties
+        document.getElementById('propArea').textContent = `0.00 ${App.units}²`;
+        document.getElementById('propCentroid').textContent = `(0.00, 0.00)`;
+        document.getElementById('propIxx').textContent = '0.00';
+        document.getElementById('propIyy').textContent = '0.00';
+        document.getElementById('propIxy').textContent = '0.00';
+        document.getElementById('propThetaP').textContent = '0.0°';
+        document.getElementById('propI1').textContent = '0.00';
+        document.getElementById('propI2').textContent = '0.00';
+        document.getElementById('propRx').textContent = '0.00';
+        document.getElementById('propRy').textContent = '0.00';
+        return;
+      }
+
+      // Centroid
+      const Xc = Qy / totalA;
+      const Yc = Qx / totalA;
+
+      // Centroidal Second Moments of Area (Parallel Axis Theorem)
+      const Ixx = Ixx0 - totalA * Yc * Yc;
+      const Iyy = Iyy0 - totalA * Xc * Xc;
+      const Ixy = Ixy0 - totalA * Xc * Yc;
+
+      // Principal Moments of Area
+      const Iavg = (Ixx + Iyy) / 2.0;
+      const R_I = Math.hypot((Ixx - Iyy) / 2.0, Ixy);
+      const I1 = Iavg + R_I; // Maximum principal moment
+      const I2 = Iavg - R_I; // Minimum principal moment
+
+      // Standard Engineering Principal Angle θp = 0.5 * atan2(-2*Ixy, Ixx - Iyy)
+      const thetaRad = 0.5 * Math.atan2(-2 * Ixy, Ixx - Iyy);
+      const thetaDeg = thetaRad * MathUtils.RAD2DEG;
+
+      // Radii of Gyration
+      const rx = Math.sqrt(Math.max(0, Ixx / totalA));
+      const ry = Math.sqrt(Math.max(0, Iyy / totalA));
+
+      // Update Inspector UI
+      const u = App.units;
+      document.getElementById('propArea').textContent = `${Math.abs(totalA).toFixed(2)} ${u}²`;
+      document.getElementById('propCentroid').textContent = `(${Xc.toFixed(2)}, ${Yc.toFixed(2)})`;
+      document.getElementById('propIxx').textContent = Ixx.toExponential(3);
+      document.getElementById('propIyy').textContent = Iyy.toExponential(3);
+      document.getElementById('propIxy').textContent = Ixy.toExponential(3);
+      document.getElementById('propThetaP').textContent = `${thetaDeg.toFixed(1)}°`;
+      document.getElementById('propI1').textContent = I1.toExponential(3);
+      document.getElementById('propI2').textContent = I2.toExponential(3);
+      document.getElementById('propRx').textContent = `${rx.toFixed(2)} ${u}`;
+      document.getElementById('propRy').textContent = `${ry.toFixed(2)} ${u}`;
+
+      // Save calculated centroid for quick local frame snap
+      App.calculatedCentroid = { x: Xc, y: Yc, thetaP: thetaDeg };
+    }
+
+    function screenToWorld(sx, sy) {
+      const canvas = document.getElementById('cadCanvas');
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      return {
+        x: (sx - cx - App.view.panX) / App.view.zoom,
+        y: -(sy - cy - App.view.panY) / App.view.zoom // Y inverted for standard CAD coordinate frame
+      };
+    }
+
+    function worldToScreen(wx, wy) {
+      const canvas = document.getElementById('cadCanvas');
+      const cx = canvas.width / 2;
+      const cy = canvas.height / 2;
+      return {
+        x: cx + App.view.panX + wx * App.view.zoom,
+        y: cy + App.view.panY - wy * App.view.zoom
+      };
+    }
+
+    // Get Active Object Snap Point
+    function getSnapPoint(rawWorldPt, activeStartPt = null) {
+      let snapPt = { x: rawWorldPt.x, y: rawWorldPt.y, type: null };
+      let minPixelDist = 15; // Snap radius in screen pixels
+
+      // Ortho constraint if Shift or F8 is active
+      if ((App.snaps.ortho || App.shiftDown) && activeStartPt) {
+        const dx = Math.abs(rawWorldPt.x - activeStartPt.x);
+        const dy = Math.abs(rawWorldPt.y - activeStartPt.y);
+        if (dx > dy) {
+          snapPt.y = activeStartPt.y;
+        } else {
+          snapPt.x = activeStartPt.x;
+        }
+      }
+
+      // Check Vertex Endpoint Snaps
+      if (App.snaps.endpoint) {
+        App.vertices.forEach(v => {
+          const scrV = worldToScreen(v.x, v.y);
+          const scrP = worldToScreen(snapPt.x, snapPt.y);
+          const d = Math.hypot(scrV.x - scrP.x, scrV.y - scrP.y);
+          if (d < minPixelDist) {
+            minPixelDist = d;
+            snapPt = { x: v.x, y: v.y, type: 'endpoint', id: v.id };
+          }
+        });
+      }
+
+      // Check Midpoint Snaps
+      if (App.snaps.midpoint) {
+        App.curves.forEach(c => {
+          const v1 = getVertex(c.v1);
+          const v2 = getVertex(c.v2);
+          if (v1 && v2) {
+            let mx = (v1.x + v2.x) / 2;
+            let my = (v1.y + v2.y) / 2;
+            if (c.type === 'ARC3' && c.vm) {
+              const vm = getVertex(c.vm);
+              if (vm) { mx = vm.x; my = vm.y; }
+            }
+            const scrM = worldToScreen(mx, my);
+            const scrP = worldToScreen(snapPt.x, snapPt.y);
+            const d = Math.hypot(scrM.x - scrP.x, scrM.y - scrP.y);
+            if (d < minPixelDist) {
+              minPixelDist = d;
+              snapPt = { x: mx, y: my, type: 'midpoint' };
+            }
+          }
+        });
+      }
+
+      // Check Grid Snap if no object snaps triggered
+      if (!snapPt.type && App.snaps.grid) {
+        const gs = App.gridSize;
+        const gx = Math.round(snapPt.x / gs) * gs;
+        const gy = Math.round(snapPt.y / gs) * gs;
+        const scrG = worldToScreen(gx, gy);
+        const scrP = worldToScreen(snapPt.x, snapPt.y);
+        if (Math.hypot(scrG.x - scrP.x, scrG.y - scrP.y) < 20) {
+          snapPt.x = gx;
+          snapPt.y = gy;
+          snapPt.type = 'grid';
+        }
+      }
+
+      return snapPt;
+    }
+
+    function renderCanvas() {
+      const canvas = document.getElementById('cadCanvas');
+      const ctx = canvas.getContext('2d');
+
+      // Resize canvas to parent container
+      const container = document.getElementById('canvasContainer');
+      canvas.width = container.clientWidth;
+      canvas.height = container.clientHeight;
+
+      const w = canvas.width;
+      const h = canvas.height;
+
+      // Clear Screen with dark CAD background
+      ctx.fillStyle = '#0f172a';
+      ctx.fillRect(0, 0, w, h);
+
+      // Render Dynamic Engineering Grid
+      renderGrid(ctx, w, h);
+
+      // Render Global Axes (X, Y)
+      renderGlobalAxes(ctx);
+
+      // Render Closed Loops & Geometry Curves
+      renderGeometry(ctx);
+
+      // Render Local Coordinate Frame
+      renderLocalFrame(ctx);
+
+      // Render Active Tool Preview / Rubberband line
+      renderToolPreview(ctx);
+
+      // Render Selection Marquee Box
+      if (App.boxSelection) {
+        ctx.strokeStyle = '#38bdf8';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.fillStyle = 'rgba(56, 189, 248, 0.1)';
+        const bx = Math.min(App.boxSelection.x1, App.boxSelection.x2);
+        const by = Math.min(App.boxSelection.y1, App.boxSelection.y2);
+        const bw = Math.abs(App.boxSelection.x2 - App.boxSelection.x1);
+        const bh = Math.abs(App.boxSelection.y2 - App.boxSelection.y1);
+        ctx.fillRect(bx, by, bw, bh);
+        ctx.strokeRect(bx, by, bw, bh);
+        ctx.setLineDash([]);
+      }
+    }
+
+    function renderGrid(ctx, w, h) {
+      ctx.save();
+      ctx.strokeStyle = '#1e293b';
+      ctx.lineWidth = 1;
+
+      const step = App.gridSize * App.view.zoom;
+      if (step > 4) {
+        const origin = worldToScreen(0, 0);
+
+        // Vertical Grid lines
+        const startX = origin.x % step;
+        for (let x = startX; x < w; x += step) {
+          ctx.beginPath();
+          ctx.moveTo(x, 0);
+          ctx.lineTo(x, h);
+          ctx.stroke();
+        }
+
+        // Horizontal Grid lines
+        const startY = origin.y % step;
+        for (let y = startY; y < h; y += step) {
+          ctx.beginPath();
+          ctx.moveTo(0, y);
+          ctx.lineTo(w, y);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+    }
+
+    function renderGlobalAxes(ctx) {
+      const origin = worldToScreen(0, 0);
+      ctx.save();
+      ctx.lineWidth = 2;
+
+      // X Axis (Red)
+      ctx.strokeStyle = '#ef4444';
+      ctx.beginPath();
+      ctx.moveTo(origin.x, origin.y);
+      ctx.lineTo(origin.x + 40, origin.y);
+      ctx.stroke();
+
+      // Y Axis (Green)
+      ctx.strokeStyle = '#22c55e';
+      ctx.beginPath();
+      ctx.moveTo(origin.x, origin.y);
+      ctx.lineTo(origin.x, origin.y - 40);
+      ctx.stroke();
+
+      ctx.restore();
+    }
+
+    function renderLocalFrame(ctx) {
+      const scr = worldToScreen(App.localFrame.x, App.localFrame.y);
+      const rad = App.localFrame.theta * MathUtils.DEG2RAD;
+
+      ctx.save();
+      ctx.translate(scr.x, scr.y);
+      ctx.rotate(-rad); // Inverted for screen coordinates
+
+      ctx.lineWidth = 2;
+      // Local xL Axis (Cyan)
+      ctx.strokeStyle = '#06b6d4';
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(50, 0);
+      ctx.stroke();
+
+      // Local yL Axis (Amber)
+      ctx.strokeStyle = '#f59e0b';
+      ctx.beginPath();
+      ctx.moveTo(0, 0);
+      ctx.lineTo(0, -50);
+      ctx.stroke();
+
+      // Origin Marker Badge
+      ctx.fillStyle = '#06b6d4';
+      ctx.beginPath();
+      ctx.arc(0, 0, 4, 0, 2 * Math.PI);
+      ctx.fill();
+
+      ctx.restore();
+    }
+
+    function renderGeometry(ctx) {
+      // Render Closed Loop Fills first
+      App.loops.forEach(loop => {
+        const isSelected = App.selectedLoopIds.has(loop.id);
+        const points = getLoopPoints(loop);
+
+        if (points.length >= 3) {
+          ctx.save();
+          ctx.beginPath();
+          const p0 = worldToScreen(points[0].x, points[0].y);
+          ctx.moveTo(p0.x, p0.y);
+          for (let i = 1; i < points.length; i++) {
+            const p = worldToScreen(points[i].x, points[i].y);
+            ctx.lineTo(p.x, p.y);
+          }
+          ctx.closePath();
+
+          // Outer CCW = Blue/Sky fill, Hole CW = Darker background fill with subtle hash
+          if (loop.isHole) {
+            ctx.fillStyle = isSelected ? 'rgba(225, 29, 72, 0.25)' : 'rgba(15, 23, 42, 0.85)';
+          } else {
+            ctx.fillStyle = isSelected ? 'rgba(56, 189, 248, 0.35)' : 'rgba(14, 165, 233, 0.15)';
+          }
+          ctx.fill();
+          ctx.restore();
+        }
+      });
+
+      // Render Curves/Edges
+      App.curves.forEach(c => {
+        const v1 = getVertex(c.v1);
+        const v2 = getVertex(c.v2);
+        if (!v1 || !v2) return;
+
+        const s1 = worldToScreen(v1.x, v1.y);
+        const s2 = worldToScreen(v2.x, v2.y);
+
+        ctx.save();
+        ctx.lineWidth = 2.5;
+        ctx.strokeStyle = '#38bdf8';
+
+        if (c.type === 'LINE') {
+          ctx.beginPath();
+          ctx.moveTo(s1.x, s1.y);
+          ctx.lineTo(s2.x, s2.y);
+          ctx.stroke();
+        } else if (c.type === 'ARC3' && c.vm) {
+          const vm = getVertex(c.vm);
+          if (vm) {
+            const props = MathUtils.calcArc3Props(v1, vm, v2);
+            if (props) {
+              const centerScr = worldToScreen(props.cx, props.cy);
+              const rScr = props.radius * App.view.zoom;
+              ctx.beginPath();
+              // Screen Y is inverted, so CCW/CW swap angles
+              ctx.arc(centerScr.x, centerScr.y, rScr, -props.a1, -props.a2, props.ccw);
+              ctx.stroke();
+            }
+          }
+        }
+        ctx.restore();
+      });
+
+      // Render Vertices / Handles
+      App.vertices.forEach(v => {
+        const scr = worldToScreen(v.x, v.y);
+        const isSelected = App.selectedVertexIds.has(v.id);
+
+        ctx.save();
+        ctx.fillStyle = isSelected ? '#f59e0b' : '#38bdf8';
+        ctx.beginPath();
+        ctx.arc(scr.x, scr.y, isSelected ? 5 : 3.5, 0, 2 * Math.PI);
+        ctx.fill();
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+        ctx.restore();
+      });
+    }
+
+    function renderToolPreview(ctx) {
+      if (!App.activeSnap) return;
+
+      // Render Snap Highlight Icon
+      const snap = App.activeSnap;
+      const scr = worldToScreen(snap.x, snap.y);
+
+      ctx.save();
+      ctx.strokeStyle = '#f59e0b';
+      ctx.lineWidth = 2;
+
+      if (snap.type === 'endpoint') {
+        ctx.strokeRect(scr.x - 5, scr.y - 5, 10, 10);
+      } else if (snap.type === 'midpoint') {
+        ctx.beginPath();
+        ctx.moveTo(scr.x, scr.y - 6);
+        ctx.lineTo(scr.x + 6, scr.y + 5);
+        ctx.lineTo(scr.x - 6, scr.y + 5);
+        ctx.closePath();
+        ctx.stroke();
+      } else if (snap.type === 'grid') {
+        ctx.beginPath();
+        ctx.arc(scr.x, scr.y, 3, 0, 2 * Math.PI);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Render Rubber-band geometry previews
+      const state = App.drawingState;
+      if (App.activeTool === 'line' && state.points.length > 0) {
+        const last = state.points[state.points.length - 1];
+        const s1 = worldToScreen(last.x, last.y);
+        const s2 = worldToScreen(snap.x, snap.y);
+
+        ctx.save();
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(s1.x, s1.y);
+        ctx.lineTo(s2.x, s2.y);
+        ctx.stroke();
+        ctx.restore();
+      } else if (App.activeTool === 'rect' && state.points.length === 1) {
+        const p1 = state.points[0];
+        const s1 = worldToScreen(p1.x, p1.y);
+        const s2 = worldToScreen(snap.x, snap.y);
+
+        ctx.save();
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(s1.x, s1.y, s2.x - s1.x, s2.y - s1.y);
+        ctx.restore();
+      } else if (App.activeTool === 'circle' && state.points.length === 1) {
+        const p1 = state.points[0];
+        const rad = MathUtils.dist(p1, snap);
+        const s1 = worldToScreen(p1.x, p1.y);
+
+        ctx.save();
+        ctx.strokeStyle = '#f59e0b';
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(s1.x, s1.y, rad * App.view.zoom, 0, 2 * Math.PI);
+        ctx.stroke();
+        ctx.restore();
+      } else if (App.activeTool === 'arc' && state.points.length > 0) {
+        if (state.points.length === 1) {
+          // Line to second point
+          const s1 = worldToScreen(state.points[0].x, state.points[0].y);
+          const s2 = worldToScreen(snap.x, snap.y);
+          ctx.save();
+          ctx.strokeStyle = '#f59e0b';
+          ctx.setLineDash([4, 4]);
+          ctx.beginPath();
+          ctx.moveTo(s1.x, s1.y);
+          ctx.lineTo(s2.x, s2.y);
+          ctx.stroke();
+          ctx.restore();
+        } else if (state.points.length === 2) {
+          // 3-Point Arc live preview
+          const props = MathUtils.calcArc3Props(state.points[0], state.points[1], snap);
+          if (props) {
+            const centerScr = worldToScreen(props.cx, props.cy);
+            const rScr = props.radius * App.view.zoom;
+            ctx.save();
+            ctx.strokeStyle = '#f59e0b';
+            ctx.setLineDash([4, 4]);
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(centerScr.x, centerScr.y, rScr, -props.a1, -props.a2, props.ccw);
+            ctx.stroke();
+            ctx.restore();
+          }
+        }
+      }
+    }
+
+    function setupCanvasInteractions() {
+      const canvas = document.getElementById('cadCanvas');
+
+      canvas.addEventListener('mousedown', e => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        // Middle Mouse Button (e.button === 1) or Pan Tool -> Start Panning
+        if (e.button === 1 || App.activeTool === 'pan' || e.spaceKey) {
+          App.isPanning = true;
+          App.panStart = { x: mouseX - App.view.panX, y: mouseY - App.view.panY };
+          return;
+        }
+
+        if (e.button !== 0) return; // Left click only for tools
+
+        const rawWorld = screenToWorld(mouseX, mouseY);
+        const lastPt = App.drawingState.points[App.drawingState.points.length - 1];
+        const snap = getSnapPoint(rawWorld, lastPt);
+
+        handleToolMouseDown(snap, e);
+      });
+
+      canvas.addEventListener('mousemove', e => {
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        if (App.isPanning) {
+          App.view.panX = mouseX - App.panStart.x;
+          App.view.panY = mouseY - App.panStart.y;
+          renderCanvas();
+          return;
+        }
+
+        const rawWorld = screenToWorld(mouseX, mouseY);
+        const lastPt = App.drawingState.points[App.drawingState.points.length - 1];
+        App.activeSnap = getSnapPoint(rawWorld, lastPt);
+
+        // Update Bottom Bar Coordinates Display
+        document.getElementById('lblCursorX').textContent = App.activeSnap.x.toFixed(2);
+        document.getElementById('lblCursorY').textContent = App.activeSnap.y.toFixed(2);
+
+        // Update Floating Dynamic Input Box
+        updateDynamicInputBox(mouseX, mouseY, lastPt, App.activeSnap);
+
+        // Box Selection Marquee update
+        if (App.boxSelection) {
+          App.boxSelection.x2 = mouseX;
+          App.boxSelection.y2 = mouseY;
+        }
+
+        renderCanvas();
+      });
+
+      window.addEventListener('mouseup', e => {
+        if (App.isPanning) {
+          App.isPanning = false;
+        }
+
+        if (App.boxSelection) {
+          finalizeBoxSelection();
+          App.boxSelection = null;
+          renderCanvas();
+        }
+      });
+
+      // Smooth Wheel Zoom centered on cursor
+      canvas.addEventListener('wheel', e => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const zoomFactor = e.deltaY < 0 ? 1.15 : 0.85;
+        const newZoom = Math.min(Math.max(App.view.zoom * zoomFactor, 0.1), 100);
+
+        // Adjust pan to zoom towards mouse position
+        App.view.panX = mouseX - (mouseX - App.view.panX) * (newZoom / App.view.zoom);
+        App.view.panY = mouseY - (mouseY - App.view.panY) * (newZoom / App.view.zoom);
+        App.view.zoom = newZoom;
+
+        renderCanvas();
+      }, { passive: false });
+
+      // Double-click to complete polylines
+      canvas.addEventListener('dblclick', e => {
+        if (App.activeTool === 'line') {
+          completeActivePolyline(false);
+        }
+      });
+    }
+
+    function handleToolMouseDown(snap, e) {
+      const state = App.drawingState;
+
+      switch (App.activeTool) {
+        case 'select':
+          if (!e.shiftKey && !e.ctrlKey) {
+            App.selectedLoopIds.clear();
+            App.selectedVertexIds.clear();
+          }
+
+          // Single pick loop / vertex
+          if (snap.type === 'endpoint' && snap.id) {
+            App.selectedVertexIds.add(snap.id);
+          } else {
+            // Find clicked loop by point-in-polygon
+            const clickedLoop = App.loops.find(loop => {
+              const pts = getLoopPoints(loop);
+              return MathUtils.pointInPolygon(snap, pts);
+            });
+            if (clickedLoop) {
+              App.selectedLoopIds.add(clickedLoop.id);
+            }
+          }
+
+          // Start marquee box select if clicked empty space
+          if (!snap.type && App.selectedLoopIds.size === 0) {
+            const rect = document.getElementById('cadCanvas').getBoundingClientRect();
+            App.boxSelection = { x1: e.clientX - rect.left, y1: e.clientY - rect.top, x2: e.clientX - rect.left, y2: e.clientY - rect.top };
+          }
+
+          updateSelectionInspectorUI();
+          renderCanvas();
+          break;
+
+        case 'line':
+          // Check Click-to-Close on initial starting vertex!
+          if (state.activePolylineVerts.length >= 3) {
+            const firstVertId = state.activePolylineVerts[0];
+            const firstVert = getVertex(firstVertId);
+            if (firstVert && Math.hypot(firstVert.x - snap.x, firstVert.y - snap.y) < (12 / App.view.zoom)) {
+              // Close polyline back to start!
+              completeActivePolyline(true);
+              return;
+            }
+          }
+
+          const vId = addVertex(snap.x, snap.y);
+          if (state.activePolylineVerts.length > 0 && state.activePolylineVerts[state.activePolylineVerts.length - 1] === vId) break; // ignore zero-length segment
+          state.activePolylineVerts.push(vId);
+          state.points.push({ x: snap.x, y: snap.y });
+
+          if (state.activePolylineVerts.length > 1) {
+            const vPrev = state.activePolylineVerts[state.activePolylineVerts.length - 2];
+            state.activeCurveIds.push(addCurveLine(vPrev, vId));
+          }
+
+          setCommandPrompt("Click next point or click start vertex / press Enter to close line...");
+          renderCanvas();
+          break;
+
+        case 'rect':
+          if (state.points.length === 0) {
+            state.points.push({ x: snap.x, y: snap.y });
+            setCommandPrompt("Select opposite corner of rectangle...");
+          } else {
+            const p1 = state.points[0];
+            const p2 = { x: snap.x, y: snap.y };
+            if (Math.abs(p2.x - p1.x) < 1e-6 || Math.abs(p2.y - p1.y) < 1e-6) {
+              state.points = [];
+              setCommandPrompt("Degenerate rectangle ignored. Select first corner...");
+              break;
+            }
+
+            const v1 = addVertex(p1.x, p1.y);
+            const v2 = addVertex(p2.x, p1.y);
+            const v3 = addVertex(p2.x, p2.y);
+            const v4 = addVertex(p1.x, p2.y);
+
+            const c1 = addCurveLine(v1, v2);
+            const c2 = addCurveLine(v2, v3);
+            const c3 = addCurveLine(v3, v4);
+            const c4 = addCurveLine(v4, v1);
+
+            const newLoopId = App.loops.length > 0 ? Math.max(...App.loops.map(l => l.id)) + 1 : 1;
+            App.loops.push({ id: newLoopId, curves: [c1, c2, c3, c4], isHole: false, manualHole: null });
+
+            state.points = [];
+            setCommandPrompt("Rectangle created. Select start point for next rectangle...");
+            saveHistory();
+          }
+          break;
+
+        case 'circle':
+          if (state.points.length === 0) {
+            state.points.push({ x: snap.x, y: snap.y });
+            setCommandPrompt("Select radius point for circle...");
+          } else {
+            const center = state.points[0];
+            const rad = MathUtils.dist(center, snap);
+            if (rad > 1e-4) {
+              // Represent circle analytical profile as 4 connected 90° ARC3 segments
+              const vTop = addVertex(center.x, center.y + rad);
+              const vRight = addVertex(center.x + rad, center.y);
+              const vBot = addVertex(center.x, center.y - rad);
+              const vLeft = addVertex(center.x - rad, center.y);
+
+              // Intermediate arc midpoint handles
+              const d = rad * Math.SQRT1_2;
+              const vmTR = addVertex(center.x + d, center.y + d);
+              const vmBR = addVertex(center.x + d, center.y - d);
+              const vmBL = addVertex(center.x - d, center.y - d);
+              const vmTL = addVertex(center.x - d, center.y + d);
+
+              const c1 = addCurveArc3(vTop, vmTR, vRight);
+              const c2 = addCurveArc3(vRight, vmBR, vBot);
+              const c3 = addCurveArc3(vBot, vmBL, vLeft);
+              const c4 = addCurveArc3(vLeft, vmTL, vTop);
+
+              const newLoopId = App.loops.length > 0 ? Math.max(...App.loops.map(l => l.id)) + 1 : 1;
+              App.loops.push({ id: newLoopId, curves: [c1, c2, c3, c4], isHole: false, manualHole: null });
+
+              saveHistory();
+            }
+            state.points = [];
+            setCommandPrompt("Circle created. Select center for next circle...");
+          }
+          break;
+
+        case 'arc':
+          if (state.points.length === 0) {
+            state.points.push({ x: snap.x, y: snap.y });
+            setCommandPrompt("Select intermediate point on arc...");
+          } else if (state.points.length === 1) {
+            state.points.push({ x: snap.x, y: snap.y });
+            setCommandPrompt("Select end point of arc...");
+          } else if (state.points.length === 2) {
+            const p1 = state.points[0];
+            const pm = state.points[1];
+            const p2 = { x: snap.x, y: snap.y };
+
+            if (!MathUtils.calcArc3Props(p1, pm, p2)) {
+              state.points = [];
+              setCommandPrompt("Arc points are collinear - arc ignored. Select start point...");
+              break;
+            }
+            const v1 = addVertex(p1.x, p1.y);
+            const vm = addVertex(pm.x, pm.y);
+            const v2 = addVertex(p2.x, p2.y);
+
+            const arcId = addCurveArc3(v1, vm, v2);
+            tryCloseLoopFrom(arcId);
+
+            state.points = [];
+            setCommandPrompt("3-Point Arc created. Select start point for next arc...");
+            saveHistory();
+          }
+          break;
+
+        case 'localframe':
+          App.localFrame.x = snap.x;
+          App.localFrame.y = snap.y;
+          document.getElementById('inputLocalX').value = snap.x.toFixed(2);
+          document.getElementById('inputLocalY').value = snap.y.toFixed(2);
+          setCommandPrompt(`Local frame origin moved to (${snap.x.toFixed(2)}, ${snap.y.toFixed(2)}).`);
+          saveHistory();
+          break;
+      }
+    }
+
+    function completeActivePolyline(isClosed) {
+      const state = App.drawingState;
+      if (isClosed && state.activePolylineVerts.length >= 3) {
+        const vFirst = state.activePolylineVerts[0];
+        const vLast = state.activePolylineVerts[state.activePolylineVerts.length - 1];
+        const ids = state.activeCurveIds.slice();
+        ids.push(addCurveLine(vLast, vFirst));
+
+        const newLoopId = App.loops.length > 0 ? Math.max(...App.loops.map(l => l.id)) + 1 : 1;
+        App.loops.push({ id: newLoopId, curves: ids, isHole: false, manualHole: null });
+        state.activePolylineVerts = [];
+        state.activeCurveIds = [];
+        state.points = [];
+        setCommandPrompt("Closed profile created. Click to start new polyline...");
+        saveHistory();
+        return;
+      }
+      if (state.activePolylineVerts.length > 0) cancelActiveDrawing(true); // fewer than 3 points: discard
+    }
+
+    // ---- Added helpers: cancel / delete / loop building ----
+    function pruneUnusedVertices() {
+      const used = new Set();
+      App.curves.forEach(c => { used.add(c.v1); used.add(c.v2); if (c.vm) used.add(c.vm); });
+      App.drawingState.activePolylineVerts.forEach(id => used.add(id));
+      App.vertices = App.vertices.filter(v => used.has(v.id));
+    }
+
+    function cancelActiveDrawing(keepSelection) {
+      const st = App.drawingState;
+      if (st.activeCurveIds.length > 0) {
+        const dead = new Set(st.activeCurveIds);
+        App.curves = App.curves.filter(c => !dead.has(c.id));
+      }
+      st.activePolylineVerts = [];
+      st.activeCurveIds = [];
+      st.points = [];
+      pruneUnusedVertices();
+      if (!keepSelection) {
+        App.selectedLoopIds.clear();
+        App.selectedVertexIds.clear();
+      }
+      document.getElementById('dynamicInput').classList.add('hidden');
+      updateSelectionInspectorUI();
+      setCommandPrompt("Cancelled.");
+      renderCanvas();
+    }
+
+    function deleteLoops(ids) {
+      const dead = new Set(ids);
+      const keep = App.loops.filter(l => !dead.has(l.id));
+      const stillUsed = new Set();
+      keep.forEach(l => l.curves.forEach(c => stillUsed.add(c)));
+      const doomed = new Set();
+      App.loops.filter(l => dead.has(l.id)).forEach(l => l.curves.forEach(c => { if (!stillUsed.has(c)) doomed.add(c); }));
+      App.loops = keep;
+      App.curves = App.curves.filter(c => !doomed.has(c.id));
+      pruneUnusedVertices();
+      App.selectedLoopIds.clear();
+      updateSelectionInspectorUI();
+      saveHistory();
+    }
+
+    function deleteSelection() {
+      if (App.selectedLoopIds.size > 0) deleteLoops([...App.selectedLoopIds]);
+    }
+
+    function fixOpenLoop(loopId) { deleteLoops([loopId]); }
+
+    // Build a loop when a newly drawn free curve closes a chain of free curves (each joint shared by exactly two)
+    function tryCloseLoopFrom(curveId) {
+      const inLoop = new Set();
+      App.loops.forEach(l => l.curves.forEach(c => inLoop.add(c)));
+      const free = App.curves.filter(c => !inLoop.has(c.id));
+      const start = getCurve(curveId);
+      if (!start) return false;
+      const chain = [start];
+      let cur = start.v2;
+      let guard = 0;
+      while (cur !== start.v1 && guard++ < 10000) {
+        const last = chain[chain.length - 1];
+        const inc = free.filter(c => c !== last && (c.v1 === cur || c.v2 === cur));
+        if (inc.length !== 1) return false;
+        const nxt = inc[0];
+        if (chain.includes(nxt)) return false;
+        chain.push(nxt);
+        cur = (nxt.v1 === cur) ? nxt.v2 : nxt.v1;
+      }
+      if (cur !== start.v1 || chain.length < 2) return false;
+      const newLoopId = App.loops.length > 0 ? Math.max(...App.loops.map(l => l.id)) + 1 : 1;
+      App.loops.push({ id: newLoopId, curves: chain.map(c => c.id), isHole: false, manualHole: null });
+      return true;
+    }
+
+    function updateDynamicInputBox(mx, my, lastPt, snap) {
+      const box = document.getElementById('dynamicInput');
+      if (!lastPt || App.activeTool === 'select' || App.activeTool === 'pan') {
+        box.classList.add('hidden');
+        return;
+      }
+
+      box.classList.remove('hidden');
+      box.style.left = `${mx + 15}px`;
+      box.style.top = `${my + 15}px`;
+
+      const dist = MathUtils.dist(lastPt, snap);
+      const angleRad = Math.atan2(snap.y - lastPt.y, snap.x - lastPt.x);
+      const angleDeg = (angleRad * MathUtils.RAD2DEG + 360) % 360;
+
+      document.getElementById('dynLength').textContent = `L: ${dist.toFixed(2)} ${App.units}`;
+      document.getElementById('dynAngle').textContent = `∠ ${angleDeg.toFixed(1)}°`;
+    }
+
+    function finalizeBoxSelection() {
+      const box = App.boxSelection;
+      const p1 = screenToWorld(box.x1, box.y1);
+      const p2 = screenToWorld(box.x2, box.y2);
+
+      const minX = Math.min(p1.x, p2.x), maxX = Math.max(p1.x, p2.x);
+      const minY = Math.min(p1.y, p2.y), maxY = Math.max(p1.y, p2.y);
+
+      App.loops.forEach(loop => {
+        const pts = getLoopPoints(loop);
+        if (pts.some(pt => pt.x >= minX && pt.x <= maxX && pt.y >= minY && pt.y <= maxY)) {
+          App.selectedLoopIds.add(loop.id);
+        }
+      });
+
+      updateSelectionInspectorUI();
+    }
+
+    function setCommandPrompt(msg) {
+      document.getElementById('cmdPromptText').textContent = msg;
+    }
+
+    function updateSelectionInspectorUI() {
+      const emptyBox = document.getElementById('inspectEmpty');
+      const contentBox = document.getElementById('inspectContent');
+
+      if (App.selectedLoopIds.size === 0) {
+        emptyBox.classList.remove('hidden');
+        contentBox.classList.add('hidden');
+        return;
+      }
+
+      emptyBox.classList.add('hidden');
+      contentBox.classList.remove('hidden');
+
+      const selectedId = Array.from(App.selectedLoopIds)[0];
+      const loop = App.loops.find(l => l.id === selectedId);
+
+      if (loop) {
+        document.getElementById('inspectType').textContent = `Loop #${loop.id}`;
+        const points = getLoopPoints(loop);
+        const signedA = calcSignedArea(points);
+
+        document.getElementById('inspectOrientation').textContent = loop.isHole ? 'CW (Hole)' : 'CCW (Outer)';
+        document.getElementById('inspectOrientation').className = loop.isHole ?
+          'text-[10px] font-mono px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30' :
+          'text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30';
+
+        document.getElementById('inspectVertCount').textContent = points.length;
+        document.getElementById('inspectArea').textContent = `${Math.abs(signedA).toFixed(2)} ${App.units}²`;
+
+        let perim = 0;
+        for (let i = 0; i < points.length; i++) {
+          perim += MathUtils.dist(points[i], points[(i + 1) % points.length]);
+        }
+        document.getElementById('inspectPerim').textContent = `${perim.toFixed(2)} ${App.units}`;
+      }
+    }
+
+    function setupPresetGenerator() {
+      const presetSelect = document.getElementById('presetType');
+      const paramsContainer = document.getElementById('presetParams');
+
+      function renderPresetFields() {
+        const type = presetSelect.value;
+        let html = '';
+
+        if (type === 'I_BEAM') {
+          html = `
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div><label class="text-slate-400 block mb-1">Height H</label><input type="number" id="p_H" value="200" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+              <div><label class="text-slate-400 block mb-1">Width B</label><input type="number" id="p_B" value="100" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+              <div><label class="text-slate-400 block mb-1">Flange tf</label><input type="number" id="p_tf" value="10" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+              <div><label class="text-slate-400 block mb-1">Web tw</label><input type="number" id="p_tw" value="6" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+            </div>
+          `;
+        } else if (type === 'RHS') {
+          html = `
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div><label class="text-slate-400 block mb-1">Height H</label><input type="number" id="p_H" value="150" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+              <div><label class="text-slate-400 block mb-1">Width B</label><input type="number" id="p_B" value="100" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+              <div><label class="text-slate-400 block mb-1">Thickness t</label><input type="number" id="p_t" value="8" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+            </div>
+          `;
+        } else if (type === 'CHS') {
+          html = `
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div><label class="text-slate-400 block mb-1">Outer Dia D</label><input type="number" id="p_D" value="114.3" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+              <div><label class="text-slate-400 block mb-1">Thickness t</label><input type="number" id="p_t" value="6.0" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+            </div>
+          `;
+        } else if (type === 'ANGLE') {
+          html = `
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div><label class="text-slate-400 block mb-1">Leg H</label><input type="number" id="p_H" value="100" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+              <div><label class="text-slate-400 block mb-1">Leg B</label><input type="number" id="p_B" value="100" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+              <div><label class="text-slate-400 block mb-1">Thickness t</label><input type="number" id="p_t" value="10" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+            </div>
+          `;
+        } else if (type === 'RECT_SOLID') {
+          html = `
+            <div class="grid grid-cols-2 gap-2 text-xs">
+              <div><label class="text-slate-400 block mb-1">Height H</label><input type="number" id="p_H" value="100" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+              <div><label class="text-slate-400 block mb-1">Width B</label><input type="number" id="p_B" value="50" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono"></div>
+            </div>
+          `;
+        } else if (type === 'CIRCLE_SOLID') {
+          html = `
+            <div class="text-xs">
+              <label class="text-slate-400 block mb-1">Diameter D</label><input type="number" id="p_D" value="100" class="w-full bg-slate-900 border border-slate-700 rounded p-1 text-slate-100 font-mono">
+            </div>
+          `;
+        }
+        paramsContainer.innerHTML = html;
+        updatePresetPreview();
+      }
+
+      presetSelect.addEventListener('change', renderPresetFields);
+      paramsContainer.addEventListener('input', updatePresetPreview);
+      renderPresetFields();
+    }
+
+    function updatePresetPreview() {
+      // SVG real-time preset preview renderer
+      const svg = document.getElementById('presetPreviewSvg');
+      svg.innerHTML = ''; // Clear preview
+    }
+
+    function generateSelectedPreset() {
+      const type = document.getElementById('presetType').value;
+      const errBox = document.getElementById('presetError');
+      errBox.classList.add('hidden');
+
+      App.vertices = [];
+      App.curves = [];
+      App.loops = [];
+
+      try {
+        if (type === 'RECT_SOLID') {
+          const H = parseFloat(document.getElementById('p_H').value);
+          const B = parseFloat(document.getElementById('p_B').value);
+          if (H <= 0 || B <= 0) throw new Error("Height and Width must be positive!");
+
+          const v1 = addVertex(-B / 2, -H / 2);
+          const v2 = addVertex(B / 2, -H / 2);
+          const v3 = addVertex(B / 2, H / 2);
+          const v4 = addVertex(-B / 2, H / 2);
+
+          const c1 = addCurveLine(v1, v2);
+          const c2 = addCurveLine(v2, v3);
+          const c3 = addCurveLine(v3, v4);
+          const c4 = addCurveLine(v4, v1);
+
+          App.loops.push({ id: 1, curves: [c1, c2, c3, c4], isHole: false, manualHole: null });
+        } else if (type === 'I_BEAM') {
+          const H = parseFloat(document.getElementById('p_H').value);
+          const B = parseFloat(document.getElementById('p_B').value);
+          const tf = parseFloat(document.getElementById('p_tf').value);
+          const tw = parseFloat(document.getElementById('p_tw').value);
+
+          if (H <= 2 * tf || B <= tw) throw new Error("Flange/Web dimensions exceed total height/width!");
+
+          const pts = [
+            { x: -tw / 2, y: -H / 2 + tf },
+            { x: -B / 2, y: -H / 2 + tf },
+            { x: -B / 2, y: -H / 2 },
+            { x: B / 2, y: -H / 2 },
+            { x: B / 2, y: -H / 2 + tf },
+            { x: tw / 2, y: -H / 2 + tf },
+            { x: tw / 2, y: H / 2 - tf },
+            { x: B / 2, y: H / 2 - tf },
+            { x: B / 2, y: H / 2 },
+            { x: -B / 2, y: H / 2 },
+            { x: -B / 2, y: H / 2 - tf },
+            { x: -tw / 2, y: H / 2 - tf }
+          ];
+
+          const vIds = pts.map(p => addVertex(p.x, p.y));
+          const cIds = [];
+          for (let i = 0; i < vIds.length; i++) {
+            cIds.push(addCurveLine(vIds[i], vIds[(i + 1) % vIds.length]));
+          }
+          App.loops.push({ id: 1, curves: cIds, isHole: false, manualHole: null });
+        } else if (type === 'RHS') {
+          const H = parseFloat(document.getElementById('p_H').value);
+          const B = parseFloat(document.getElementById('p_B').value);
+          const t = parseFloat(document.getElementById('p_t').value);
+
+          if (t >= B / 2 || t >= H / 2) throw new Error("Thickness t must be less than half section size!");
+
+          // Outer Box
+          const vo1 = addVertex(-B / 2, -H / 2);
+          const vo2 = addVertex(B / 2, -H / 2);
+          const vo3 = addVertex(B / 2, H / 2);
+          const vo4 = addVertex(-B / 2, H / 2);
+          const co = [
+            addCurveLine(vo1, vo2), addCurveLine(vo2, vo3),
+            addCurveLine(vo3, vo4), addCurveLine(vo4, vo1)
+          ];
+          App.loops.push({ id: 1, curves: co, isHole: false, manualHole: null });
+
+          // Inner Hole Box (CW orientation)
+          const bi = B / 2 - t, hi = H / 2 - t;
+          const vi1 = addVertex(-bi, -hi);
+          const vi2 = addVertex(-bi, hi);
+          const vi3 = addVertex(bi, hi);
+          const vi4 = addVertex(bi, -hi);
+          const ci = [
+            addCurveLine(vi1, vi2), addCurveLine(vi2, vi3),
+            addCurveLine(vi3, vi4), addCurveLine(vi4, vi1)
+          ];
+          App.loops.push({ id: 2, curves: ci, isHole: true, manualHole: true });
+        }
+
+        document.getElementById('modalPresets').classList.add('hidden');
+        saveHistory();
+        zoomExtents();
+      } catch (err) {
+        errBox.classList.remove('hidden');
+        document.getElementById('presetErrorMsg').textContent = err.message;
+      }
+    }
+
+    function runGeometryDiagnostics() {
+      const list = document.getElementById('diagList');
+      list.innerHTML = '';
+
+      let issuesCount = 0;
+
+      // Check GEO004: Open loops
+      App.loops.forEach(loop => {
+        if (!loop.curves || loop.curves.length < 3) {
+          issuesCount++;
+          list.innerHTML += `
+            <div class="bg-rose-950/40 border border-rose-800/60 p-2.5 rounded-lg text-rose-300 flex items-center justify-between">
+              <div><span class="font-bold">GEO004:</span> Loop #${loop.id} is open or degenerate!</div>
+              <button onclick="fixOpenLoop(${loop.id})" class="px-2 py-0.5 bg-rose-700 text-white font-semibold rounded text-[10px]">Fix</button>
+            </div>
+          `;
+        }
+      });
+
+      // Check GEO005: Incorrect orientation
+      App.loops.forEach(loop => {
+        const pts = getLoopPoints(loop);
+        const area = calcSignedArea(pts);
+        const shouldBeCCW = !loop.isHole;
+        const isCCW = area > 0;
+
+        if (shouldBeCCW !== isCCW) {
+          issuesCount++;
+          list.innerHTML += `
+            <div class="bg-amber-950/40 border border-amber-800/60 p-2.5 rounded-lg text-amber-300 flex items-center justify-between">
+              <div><span class="font-bold">GEO005:</span> Loop #${loop.id} orientation mismatch!</div>
+              <button onclick="fixLoopOrientation(${loop.id})" class="px-2 py-0.5 bg-amber-700 text-white font-semibold rounded text-[10px]">Reverse</button>
+            </div>
+          `;
+        }
+      });
+
+      const badge = document.getElementById('diagBadge');
+      if (issuesCount === 0) {
+        badge.textContent = 'OK';
+        badge.className = 'bg-emerald-500/20 text-emerald-400 text-[10px] px-1.5 py-0.2 rounded-full border border-emerald-500/30 font-mono';
+        list.innerHTML = `
+          <div class="text-center py-8 text-slate-500 text-xs">
+            <i class="fa-solid fa-circle-check text-2xl text-emerald-500/60 mb-2 block"></i>
+            All topological rules satisfied! No errors detected.
+          </div>
+        `;
+      } else {
+        badge.textContent = `${issuesCount} ERR`;
+        badge.className = 'bg-rose-500/20 text-rose-400 text-[10px] px-1.5 py-0.2 rounded-full border border-rose-500/30 font-mono';
+      }
+    }
+
+    function fixLoopOrientation(loopId) {
+      const loop = App.loops.find(l => l.id === loopId);
+      if (loop) {
+        loop.curves.reverse();
+        loop.curves.forEach(cId => {
+          const c = getCurve(cId);
+          if (c) {
+            const temp = c.v1;
+            c.v1 = c.v2;
+            c.v2 = temp;
+          }
+        });
+        saveHistory();
+      }
+    }
+
+    // ---- FEM3DGEO 1.0 writer (conforms to FEM3DGEO.md; canonical ascending IDs) ----
+    function fgNum(v) {
+      if (Math.abs(v) < 1e-12) return '0';
+      return String(parseFloat(v.toPrecision(12)));
+    }
+
+    function fgLengthUnit() {
+      return ({ MM: 'mm', CM: 'cm', M: 'm', IN: 'in' })[App.units] || 'UNKNOWN';
+    }
+
+    // Walk a loop head-to-tail and return the +1/-1 sense of each curve relative to its stored v1->v2 direction
+    function loopTraversal(loop) {
+      const cs = loop.curves.map(getCurve);
+      if (cs.length === 0 || cs.some(c => !c)) return null;
+      let cur;
+      if (cs.length === 1) cur = cs[0].v1;
+      else cur = (cs[0].v2 === cs[1].v1 || cs[0].v2 === cs[1].v2) ? cs[0].v1 : cs[0].v2;
+      const uses = [];
+      for (const c of cs) {
+        if (c.v1 === cur) { uses.push({ id: c.id, sense: 1 }); cur = c.v2; }
+        else if (c.v2 === cur) { uses.push({ id: c.id, sense: -1 }); cur = c.v1; }
+        else return null; // not contiguous
+      }
+      return uses;
+    }
+
+    function generateFEM3DGEOText() {
+      const warn = [];
+      const loops = App.loops.slice().sort((a, b) => a.id - b.id);
+      const trav = new Map();
+      loops.forEach(l => {
+        const t = loopTraversal(l);
+        if (!t) warn.push(`Loop ${l.id} is open or non-contiguous and was NOT exported (GEO004).`);
+        else trav.set(l.id, t);
+      });
+      const good = loops.filter(l => trav.has(l.id));
+
+      // Assign every hole to its smallest enclosing outer loop (one FACE per outer loop)
+      const info = good.map(l => {
+        const pts = getLoopPoints(l, 64);
+        return { loop: l, pts, absArea: Math.abs(calcSignedArea(pts)) };
+      });
+      const outers = info.filter(i => !i.loop.isHole);
+      const holesOf = new Map(outers.map(o => [o.loop.id, []]));
+      info.filter(i => i.loop.isHole).forEach(h => {
+        const parents = outers.filter(o => MathUtils.pointInPolygon(h.pts[0], o.pts)).sort((a, b) => a.absArea - b.absArea);
+        if (parents.length === 0) warn.push(`Hole loop ${h.loop.id} has no enclosing outer loop and was NOT exported (GEO005).`);
+        else holesOf.get(parents[0].loop.id).push(h.loop.id);
+      });
+
+      // Only curves used by exported loops; only vertices that are edge endpoints
+      const curveIds = new Set();
+      good.forEach(l => trav.get(l.id).forEach(u => curveIds.add(u.id)));
+      const curves = App.curves.filter(c => curveIds.has(c.id)).sort((a, b) => a.id - b.id);
+      const vertIds = new Set();
+      curves.forEach(c => { vertIds.add(c.v1); vertIds.add(c.v2); });
+      const verts = App.vertices.filter(v => vertIds.has(v.id)).sort((a, b) => a.id - b.id);
+      const P = id => getVertex(id);
+
+      let t = `FEM3DGEO 1.0\n`;
+      warn.forEach(w => { t += `# WARNING: ${w}\n`; });
+      t += `UNITS length=${fgLengthUnit()}\n`;
+      t += `COORDSYS CARTESIAN\n`;
+      t += `TOLERANCE coincidence=0.0001 angle=1e-8\n`;
+      t += `SOURCE format=SECTION_EDITOR name="section_profile"\n`;
+      t += `META section_origin_x=${fgNum(App.localFrame.x)} section_origin_y=${fgNum(App.localFrame.y)} section_theta_deg=${fgNum(App.localFrame.theta)}\n\n`;
+
+      verts.forEach(v => { t += `VERTEX ${v.id} ${fgNum(v.x)} ${fgNum(v.y)} 0\n`; });
+      t += `\n`;
+
+      curves.forEach(c => {
+        const a = P(c.v1), b = P(c.v2);
+        if (c.type === 'LINE') {
+          // LINE = point + direction; edge parameter 0..1 spans v1 -> v2
+          t += `CURVE ${c.id} LINE ${fgNum(a.x)} ${fgNum(a.y)} 0 ${fgNum(b.x - a.x)} ${fgNum(b.y - a.y)} 0\n`;
+        } else {
+          const m = P(c.vm);
+          t += `CURVE ${c.id} ARC3 ${fgNum(a.x)} ${fgNum(a.y)} 0 ${fgNum(m.x)} ${fgNum(m.y)} 0 ${fgNum(b.x)} ${fgNum(b.y)} 0\n`;
+        }
+      });
+      t += `\n`;
+
+      curves.forEach(c => { t += `EDGE ${c.id} ${c.v1} ${c.v2} ${c.id} 0 1 +1\n`; });
+      t += `\n`;
+
+      good.forEach(l => {
+        t += `LOOP ${l.id} ` + trav.get(l.id).map(u => `EDGE ${u.id} ${u.sense > 0 ? '+1' : '-1'}`).join(' ') + `\n`;
+      });
+      t += `\n`;
+
+      t += `SURFACE 1 PLANE 0 0 0 0 0 1\n`;
+      const faceIds = [];
+      outers.sort((a, b) => a.loop.id - b.loop.id).forEach((o, i) => {
+        const fid = i + 1;
+        faceIds.push(fid);
+        t += `FACE ${fid} 1 OUTER ${o.loop.id}` + holesOf.get(o.loop.id).sort((a, b) => a - b).map(h => ` INNER ${h}`).join('') + `\n`;
+      });
+      if (faceIds.length > 0) {
+        t += `BODY 1 ` + faceIds.map(f => `FACE ${f}`).join(' ') + `\n`;
+        t += `SET 1 "ALL_FACES" FACE ${faceIds.join(' ')}\n`;
+      }
+      return t;
+    }
+
+    function generateDXFText() {
+      let dxf = `0\nSECTION\n2\nHEADER\n0\nENDSEC\n`;
+      dxf += `0\nSECTION\n2\nENTITIES\n`;
+
+      App.curves.forEach(c => {
+        const v1 = getVertex(c.v1);
+        const v2 = getVertex(c.v2);
+        if (!v1 || !v2) return;
+
+        if (c.type === 'LINE') {
+          dxf += `0\nLINE\n8\nSECTION_EDGE\n10\n${v1.x}\n20\n${v1.y}\n30\n0.0\n11\n${v2.x}\n21\n${v2.y}\n31\n0.0\n`;
+        } else if (c.type === 'ARC3' && c.vm) {
+          const vm = getVertex(c.vm);
+          if (vm) {
+            const props = MathUtils.calcArc3Props(v1, vm, v2);
+            if (props) {
+              // DXF ARC entities always sweep counter-clockwise from start to end angle
+              const sA = props.ccw ? props.a1 : props.a2;
+              const eA = props.ccw ? props.a2 : props.a1;
+              dxf += `0\nARC\n8\nSECTION_EDGE\n10\n${props.cx}\n20\n${props.cy}\n30\n0.0\n40\n${props.radius}\n50\n${(sA * MathUtils.RAD2DEG).toFixed(6)}\n51\n${(eA * MathUtils.RAD2DEG).toFixed(6)}\n`;
+            }
+          }
+        }
+      });
+
+      dxf += `0\nENDSEC\n0\nEOF\n`;
+      return dxf;
+    }
+
+    function setupExportModal() {
+      let currentTab = 'fgeo';
+
+      function refreshExportPreview() {
+        const codeText = (currentTab === 'fgeo') ? generateFEM3DGEOText() : generateDXFText();
+        document.getElementById('exportCodePreview').value = codeText;
+      }
+
+      document.getElementById('tabFgeo').addEventListener('click', () => {
+        currentTab = 'fgeo';
+        document.getElementById('tabFgeo').className = 'px-3 py-1 rounded-md bg-sky-600 text-white font-semibold';
+        document.getElementById('tabDxf').className = 'px-3 py-1 rounded-md text-slate-400 hover:text-slate-200';
+        refreshExportPreview();
+      });
+
+      document.getElementById('tabDxf').addEventListener('click', () => {
+        currentTab = 'dxf';
+        document.getElementById('tabDxf').className = 'px-3 py-1 rounded-md bg-sky-600 text-white font-semibold';
+        document.getElementById('tabFgeo').className = 'px-3 py-1 rounded-md text-slate-400 hover:text-slate-200';
+        refreshExportPreview();
+      });
+
+      document.getElementById('btnExport').addEventListener('click', () => {
+        refreshExportPreview();
+        document.getElementById('modalExport').classList.remove('hidden');
+      });
+
+      document.getElementById('btnCopyCode').addEventListener('click', () => {
+        const text = document.getElementById('exportCodePreview').value;
+        navigator.clipboard.writeText(text);
+        alert('Export code copied to clipboard!');
+      });
+
+      document.getElementById('btnDownloadExport').addEventListener('click', () => {
+        const text = document.getElementById('exportCodePreview').value;
+        const ext = (currentTab === 'fgeo') ? 'fgeo' : 'dxf';
+        const blob = new Blob([text], { type: 'text/plain' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = `section_profile.${ext}`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+      });
+    }
+
+    function zoomExtents() {
+      if (App.vertices.length === 0) return;
+
+      const minX = Math.min(...App.vertices.map(v => v.x));
+      const maxX = Math.max(...App.vertices.map(v => v.x));
+      const minY = Math.min(...App.vertices.map(v => v.y));
+      const maxY = Math.max(...App.vertices.map(v => v.y));
+
+      const dx = maxX - minX || 100;
+      const dy = maxY - minY || 100;
+
+      const canvas = document.getElementById('cadCanvas');
+      const fitZoom = Math.min((canvas.width - 100) / dx, (canvas.height - 100) / dy);
+
+      App.view.zoom = Math.max(0.2, fitZoom);
+      App.view.panX = -((minX + maxX) / 2) * App.view.zoom;
+      App.view.panY = ((minY + maxY) / 2) * App.view.zoom;
+
+      renderCanvas();
+    }
+
+    function setupUIEventListeners() {
+      // Tool Buttons Switching
+      document.querySelectorAll('.tool-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+          btn.classList.add('active');
+          App.activeTool = btn.dataset.tool;
+          cancelActiveDrawing(true);
+          setCommandPrompt(`Tool activated: ${App.activeTool.toUpperCase()}`);
+          renderCanvas();
+        });
+      });
+
+      // Snapping Checkboxes
+      document.getElementById('snapGrid').addEventListener('change', e => App.snaps.grid = e.target.checked);
+      document.getElementById('snapEndpoint').addEventListener('change', e => App.snaps.endpoint = e.target.checked);
+      document.getElementById('snapMidpoint').addEventListener('change', e => App.snaps.midpoint = e.target.checked);
+      document.getElementById('snapCenter').addEventListener('change', e => App.snaps.center = e.target.checked);
+      document.getElementById('toggleOrtho').addEventListener('change', e => App.snaps.ortho = e.target.checked);
+
+      // Unit Selector
+      document.getElementById('selectUnits').addEventListener('change', e => {
+        App.units = e.target.value;
+        recalculateSectionProperties();
+      });
+
+      // Local Frame Snap Buttons
+      document.getElementById('btnSnapCentroid').addEventListener('click', () => {
+        if (App.calculatedCentroid) {
+          App.localFrame.x = App.calculatedCentroid.x;
+          App.localFrame.y = App.calculatedCentroid.y;
+          document.getElementById('inputLocalX').value = App.calculatedCentroid.x.toFixed(2);
+          document.getElementById('inputLocalY').value = App.calculatedCentroid.y.toFixed(2);
+          saveHistory();
+        }
+      });
+
+      document.getElementById('btnAlignPrincipal').addEventListener('click', () => {
+        if (App.calculatedCentroid) {
+          App.localFrame.theta = App.calculatedCentroid.thetaP;
+          document.getElementById('inputLocalTheta').value = App.calculatedCentroid.thetaP.toFixed(2);
+          saveHistory();
+        }
+      });
+
+      // Local frame numeric inputs (previously not wired up)
+      const bindFrame = (id, key) => document.getElementById(id).addEventListener('change', e => {
+        const v = parseFloat(e.target.value);
+        if (Number.isFinite(v)) { App.localFrame[key] = v; saveHistory(); }
+      });
+      bindFrame('inputLocalX', 'x');
+      bindFrame('inputLocalY', 'y');
+      bindFrame('inputLocalTheta', 'theta');
+
+      // Grid size (previously not wired up)
+      document.getElementById('inputGridSize').addEventListener('change', e => {
+        const v = parseFloat(e.target.value);
+        if (Number.isFinite(v) && v > 0) { App.gridSize = v; renderCanvas(); }
+      });
+
+      // Inspector actions (previously not wired up)
+      document.getElementById('btnToggleHole').addEventListener('click', () => {
+        App.loops.filter(l => App.selectedLoopIds.has(l.id)).forEach(l => { l.manualHole = !l.isHole; });
+        saveHistory();
+        updateSelectionInspectorUI();
+      });
+      // Orientation is always enforced from hole/outer status, so a manual reverse would be undone at once
+      document.getElementById('btnReverseOrientation').remove();
+      document.getElementById('btnDeleteSelected').addEventListener('click', deleteSelection);
+      document.getElementById('btnAutoFixAll').addEventListener('click', () => saveHistory());
+
+      // Modals Open/Close
+      document.getElementById('btnOpenPresets').addEventListener('click', () => document.getElementById('modalPresets').classList.remove('hidden'));
+      document.getElementById('btnHelp').addEventListener('click', () => document.getElementById('modalHelp').classList.remove('hidden'));
+      document.querySelectorAll('.closeModal').forEach(b => b.addEventListener('click', () => {
+        document.querySelectorAll('.modal-backdrop').forEach(m => m.classList.add('hidden'));
+      }));
+
+      document.getElementById('btnGeneratePreset').addEventListener('click', generateSelectedPreset);
+      document.getElementById('btnZoomFit').addEventListener('click', zoomExtents);
+      document.getElementById('btnUndo').addEventListener('click', undo);
+      document.getElementById('btnRedo').addEventListener('click', redo);
+
+      document.getElementById('btnClearAll').addEventListener('click', () => {
+        if (confirm("Are you sure you want to clear the canvas?")) {
+          App.vertices = [];
+          App.curves = [];
+          App.loops = [];
+          App.selectedLoopIds.clear();
+          saveHistory();
+        }
+      });
+
+      // Sidebar Tab Switching
+      document.getElementById('tabProps').addEventListener('click', () => switchTab('panelProps', 'tabProps'));
+      document.getElementById('tabInspect').addEventListener('click', () => switchTab('panelInspect', 'tabInspect'));
+      document.getElementById('tabDiag').addEventListener('click', () => switchTab('panelDiag', 'tabDiag'));
+
+      function switchTab(panelId, tabId) {
+        ['panelProps', 'panelInspect', 'panelDiag'].forEach(p => document.getElementById(p).classList.add('hidden'));
+        ['tabProps', 'tabInspect', 'tabDiag'].forEach(t => {
+          const el = document.getElementById(t);
+          el.className = 'flex-1 py-2.5 text-slate-400 border-b-2 border-transparent hover:text-slate-200 text-center';
+        });
+        document.getElementById(panelId).classList.remove('hidden');
+        document.getElementById(tabId).className = 'flex-1 py-2.5 text-sky-400 border-b-2 border-sky-500 font-semibold text-center bg-slate-800/50';
+      }
+
+      // Keyboard Hotkeys
+      window.addEventListener('keydown', e => {
+        App.shiftDown = e.shiftKey;
+        if (['INPUT', 'TEXTAREA', 'SELECT'].includes(e.target.tagName)) return;
+
+        const kl = e.key.toLowerCase();
+        if ((e.ctrlKey || e.metaKey) && kl === 'z') { if (e.shiftKey) redo(); else undo(); e.preventDefault(); return; }
+        if ((e.ctrlKey || e.metaKey) && kl === 'y') { redo(); e.preventDefault(); return; }
+        if (e.ctrlKey || e.metaKey || e.altKey) return; // leave browser shortcuts (Ctrl+C, Ctrl+S...) alone
+        if (e.key === 'Escape') { cancelActiveDrawing(); return; }
+        if (e.key === 'Delete' || e.key === 'Backspace') { deleteSelection(); e.preventDefault(); return; }
+        if (e.key === 'F8') {
+          App.snaps.ortho = !App.snaps.ortho;
+          document.getElementById('toggleOrtho').checked = App.snaps.ortho;
+          e.preventDefault();
+        }
+        if (e.key === 'l' || e.key === 'L') switchTool('line');
+        if (e.key === 'r' || e.key === 'R') switchTool('rect');
+        if (e.key === 'c' || e.key === 'C') switchTool('circle');
+        if (e.key === 'a' || e.key === 'A') switchTool('arc');
+        if (e.key === 's' || e.key === 'S') switchTool('select');
+        if (e.key === 'p' || e.key === 'P') switchTool('pan');
+        if (e.key === 'o' || e.key === 'O') switchTool('localframe');
+        if (e.key === 'Enter') { completeActivePolyline(true); }
+      });
+
+      window.addEventListener('keyup', e => { App.shiftDown = e.shiftKey; });
+
+      function switchTool(toolName) {
+        const btn = document.querySelector(`[data-tool="${toolName}"]`);
+        if (btn) btn.click();
+      }
+    }
+
+    window.onload = function() {
+      setupCanvasInteractions();
+      setupUIEventListeners();
+      setupPresetGenerator();
+      setupExportModal();
+
+      // Load initial preset (Universal I-Beam) to showcase CAD capabilities
+      document.getElementById('presetType').value = 'I_BEAM';
+      generateSelectedPreset();
+
+      window.addEventListener('resize', renderCanvas);
+    };
+  </script>
+</body>
+</html>
