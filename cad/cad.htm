@@ -1,0 +1,1458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WebCAD Studio - 2D Engineering CAD</title>
+<style>
+  :root {
+    --bg-workspace: #18191c;
+    --bg-chrome: #222327;
+    --bg-panel: #2a2b30;
+    --bg-hover: #373940;
+    --bg-active: #40424a;
+    --border-color: #3e4049;
+    --border-subtle: #2d2e34;
+    --text-main: #e2e4e9;
+    --text-muted: #8b8e98;
+    --accent-blue: #0088ff;
+    --accent-cyan: #00d2ff;
+    --accent-orange: #ff9800;
+    --accent-danger: #f85149;
+    --cli-bg: #141517;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; }
+  body {
+    height: 100vh; display: flex; flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+    font-size: 11px; background-color: var(--bg-chrome); color: var(--text-main); overflow: hidden;
+  }
+
+  /* Top Nav / Menu */
+  #header-bar {
+    display: flex; align-items: center; justify-content: space-between;
+    height: 34px; background: var(--bg-chrome); border-bottom: 1px solid var(--border-color); padding: 0 10px;
+  }
+  .app-brand { font-weight: 700; font-size: 13px; color: var(--accent-cyan); display: flex; align-items: center; gap: 6px; }
+  .menu-group { display: flex; gap: 4px; }
+
+  /* Buttons & Dropdowns */
+  .btn {
+    background: var(--bg-panel); color: var(--text-main); border: 1px solid var(--border-color);
+    border-radius: 4px; padding: 4px 8px; font-size: 11px; font-weight: 500; cursor: pointer;
+    display: inline-flex; align-items: center; gap: 4px; transition: all 0.15s ease;
+  }
+  .btn:hover { background: var(--bg-hover); border-color: #555761; }
+  .btn:active, .btn.active { background: var(--accent-blue); border-color: var(--accent-blue); color: #fff; }
+  .btn-accent { border-color: var(--accent-blue); color: var(--accent-blue); }
+  .btn-accent:hover { background: var(--accent-blue); color: #fff; }
+  
+  select.cad-select {
+    background: var(--bg-panel); color: var(--text-main); border: 1px solid var(--border-color);
+    border-radius: 4px; padding: 3px 6px; font-size: 11px; outline: none; cursor: pointer;
+  }
+  select.cad-select:focus { border-color: var(--accent-blue); }
+
+  /* Toolbars Ribbon */
+  #toolbar-ribbon {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+    background: var(--bg-panel); padding: 4px 10px; border-bottom: 1px solid var(--border-color);
+  }
+  .ribbon-section { display: flex; align-items: center; gap: 3px; position: relative; }
+  .ribbon-label { font-size: 9px; text-transform: uppercase; color: var(--text-muted); margin-right: 4px; font-weight: 700; }
+  .v-sep { width: 1px; height: 20px; background: var(--border-color); margin: 0 4px; }
+
+  /* Viewport Workspace */
+  #workspace-container { flex: 1; position: relative; overflow: hidden; background: var(--bg-workspace); }
+  canvas#cad-canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+
+  /* Modern Engineering Command Window */
+  #cli-panel {
+    height: 120px; background: var(--cli-bg); border-top: 1px solid var(--border-color);
+    display: flex; flex-direction: column; font-family: "JetBrains Mono", "Cascadia Code", "Consolas", monospace;
+  }
+  #cli-output {
+    flex: 1; overflow-y: auto; padding: 6px 12px; font-size: 11.5px;
+    color: #b3b7c2; white-space: pre-wrap; line-height: 1.45;
+  }
+  .log-cmd { color: var(--accent-cyan); font-weight: 600; }
+  .log-info { color: #8b8e98; }
+  .log-success { color: #5af78e; }
+  .log-warn { color: var(--accent-orange); }
+
+  #cli-input-bar {
+    display: flex; align-items: center; padding: 4px 10px; background: #0c0d0e;
+    border-top: 1px solid var(--border-subtle);
+  }
+  #cli-prompt-label { color: var(--accent-cyan); font-weight: bold; margin-right: 6px; font-size: 12px; }
+  #cli-input {
+    flex: 1; background: transparent; border: none; outline: none;
+    color: #fff; font-family: inherit; font-size: 12px;
+  }
+
+  /* Status Bar */
+  #status-bar {
+    height: 24px; background: var(--bg-chrome); border-top: 1px solid var(--border-subtle);
+    display: flex; align-items: center; justify-content: space-between; padding: 0 10px; font-size: 11px;
+  }
+  .status-left, .status-right { display: flex; align-items: center; gap: 8px; }
+  .coord-pill { font-family: monospace; color: var(--text-muted); background: var(--bg-panel); padding: 1px 6px; border-radius: 3px; }
+  .toggle-chip {
+    padding: 1px 6px; border-radius: 3px; cursor: pointer; font-weight: 600; font-size: 10px;
+    color: var(--text-muted); background: var(--bg-panel); border: 1px solid transparent;
+  }
+  .toggle-chip.active { color: #fff; background: #1c3552; border-color: var(--accent-blue); }
+
+  /* Floating Modern Dialog */
+  .cad-dialog {
+    display: none; position: absolute; top: 45px; left: 60px;
+    background: var(--bg-panel); border: 1px solid var(--border-color);
+    border-radius: 6px; box-shadow: 0 10px 25px rgba(0,0,0,0.5); z-index: 1000; min-width: 360px; overflow: hidden;
+  }
+  .dialog-header {
+    background: var(--bg-chrome); padding: 6px 10px; font-weight: 600;
+    display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-color);
+  }
+  .dialog-close { cursor: pointer; color: var(--text-muted); font-size: 14px; }
+  .dialog-close:hover { color: var(--text-main); }
+  .dialog-body { padding: 10px; max-height: 320px; overflow-y: auto; }
+  table.cad-table { width: 100%; border-collapse: collapse; font-size: 11px; text-align: left; }
+  table.cad-table th { color: var(--text-muted); font-weight: 600; padding: 4px 6px; border-bottom: 1px solid var(--border-color); }
+  table.cad-table td { padding: 4px 6px; border-bottom: 1px solid var(--border-subtle); }
+</style>
+</head>
+<body>
+
+  <!-- Top Bar -->
+  <header id="header-bar">
+    <div class="app-brand">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M3 3h18v18H3z"/><path d="M3 9h18M9 21V9"/></svg>
+      WebCAD Studio
+    </div>
+    <div class="menu-group">
+      <button class="btn" onclick="newFile()">New</button>
+      <button class="btn btn-accent" onclick="exportDXF()">Export DXF</button>
+      <button class="btn" onclick="document.getElementById('dxf-file-input').click()">Import DXF</button>
+      <input type="file" id="dxf-file-input" style="display:none;" accept=".dxf" onchange="importDXF(event)">
+      <div class="v-sep"></div>
+      <button class="btn" title="Undo (Ctrl+Z)" onclick="undo()">↶</button>
+      <button class="btn" title="Redo (Ctrl+Y)" onclick="redo()">↷</button>
+      <button class="btn" title="Cut (Ctrl+X)" onclick="cut()">Cut</button>
+      <button class="btn" title="Copy (Ctrl+C)" onclick="copy()">Copy</button>
+      <button class="btn" title="Paste (Ctrl+V)" onclick="startCommand('PASTE')">Paste</button>
+    </div>
+  </header>
+
+  <!-- Modern Ribbon Toolbar -->
+  <div id="toolbar-ribbon">
+    <!-- Draw Group -->
+    <div class="ribbon-section">
+      <span class="ribbon-label">Draw</span>
+      <button class="btn" onclick="startCommand('LINE')" title="Line (L)">Line</button>
+      <button class="btn" onclick="startCommand('PLINE')" title="Polyline (PL)">Pline</button>
+      <button class="btn" onclick="startCommand('CIRCLE')" title="Circle (C)">Circle</button>
+      <button class="btn" onclick="startCommand('ARC')" title="3-Point Arc (A)">Arc</button>
+      <button class="btn" onclick="startCommand('RECTANGLE')" title="Rectangle (REC)">Rect</button>
+      <button class="btn" onclick="startCommand('POLYGON')" title="Polygon (POL)">Polygon</button>
+      <button class="btn" onclick="startCommand('ELLIPSE')" title="Ellipse (EL)">Ellipse</button>
+      <button class="btn" onclick="startCommand('SPLINE')" title="Spline curve (SPL)">Spline</button>
+      <button class="btn" onclick="startCommand('POINT')" title="Point entity (PO)">Point</button>
+    </div>
+
+    <div class="v-sep"></div>
+
+    <!-- Modify Group -->
+    <div class="ribbon-section">
+      <span class="ribbon-label">Modify</span>
+      <button class="btn" onclick="startCommand('MOVE')" title="Move (M)">Move</button>
+      <button class="btn" onclick="startCommand('COPY')" title="Copy (CO)">Copy</button>
+      <button class="btn" onclick="startCommand('ROTATE')" title="Rotate (RO)">Rotate</button>
+      <button class="btn" onclick="startCommand('SCALE')" title="Scale (SC)">Scale</button>
+      <button class="btn" onclick="startCommand('MIRROR')" title="Mirror (MI)">Mirror</button>
+      <button class="btn" onclick="startCommand('OFFSET')" title="Offset (O)">Offset</button>
+      <button class="btn" onclick="startCommand('TRIM')" title="Trim (TR)">Trim</button>
+      <button class="btn" onclick="startCommand('EXPLODE')" title="Explode (X)">Explode</button>
+      <button class="btn" onclick="startCommand('ERASE')" title="Delete (E)">Erase</button>
+    </div>
+
+    <div class="v-sep"></div>
+
+    <!-- Properties Bar -->
+    <div class="ribbon-section">
+      <span class="ribbon-label">Properties</span>
+      <label>Layer:</label>
+      <select id="layer-selector" class="cad-select" onchange="changeActiveLayer(this.value)"></select>
+      <button class="btn" onclick="toggleLayersDialog()">Manager...</button>
+      
+      <label style="margin-left: 6px;">Color:</label>
+      <select id="prop-color" class="cad-select" onchange="updateCurrentProperties()">
+        <option value="ByLayer">ByLayer</option>
+        <option value="#ffffff">White</option>
+        <option value="#f85149">Red</option>
+        <option value="#ff9800">Orange</option>
+        <option value="#ffeb3b">Yellow</option>
+        <option value="#5af78e">Green</option>
+        <option value="#00d2ff">Cyan</option>
+        <option value="#b388ff">Magenta</option>
+      </select>
+
+      <label style="margin-left: 6px;">Linetype:</label>
+      <select id="prop-linetype" class="cad-select" onchange="updateCurrentProperties()">
+        <option value="ByLayer">ByLayer</option>
+        <option value="Continuous">Continuous</option>
+        <option value="Dashed">Dashed</option>
+        <option value="Center">Center (Long-Short)</option>
+        <option value="Dot">Dotted</option>
+      </select>
+
+      <label style="margin-left: 6px;">Lineweight:</label>
+      <select id="prop-lineweight" class="cad-select" onchange="updateCurrentProperties()">
+        <option value="ByLayer">ByLayer</option>
+        <option value="1">0.15 mm</option>
+        <option value="2">0.30 mm</option>
+        <option value="3">0.50 mm</option>
+        <option value="4">0.70 mm</option>
+      </select>
+    </div>
+
+    <div class="v-sep"></div>
+    <button class="btn" onclick="execCommand('MASSPROP')">Massprop</button>
+    <button class="btn" onclick="zoomExtents()">Zoom Ext</button>
+  </div>
+
+  <!-- CAD Viewport -->
+  <div id="workspace-container">
+    <canvas id="cad-canvas"></canvas>
+
+    <!-- Layers Dialog -->
+    <div id="layer-dlg" class="cad-dialog">
+      <div class="dialog-header">
+        <span>Layer Properties Manager</span>
+        <span class="dialog-close" onclick="toggleLayersDialog()">✕</span>
+      </div>
+      <div class="dialog-body">
+        <div style="margin-bottom:8px;">
+          <button class="btn btn-accent" onclick="addLayerPrompt()">+ New Layer</button>
+        </div>
+        <table class="cad-table" id="layer-table">
+          <thead><tr><th>Name</th><th>Color</th><th>Visible</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- CLI Console -->
+  <div id="cli-panel">
+    <div id="cli-output">AutoCAD 2000 Functional Specification Initialized.
+Type 'HELP' or run commands like LINE (L), PLINE (PL), CIRCLE (C), ARC (A), RECTANGLE (REC), POLYGON (POL), ELLIPSE (EL), SPLINE (SPL), POINT (PO), OFFSET (O), MIRROR (MI), TRIM (TR), EXPLODE (X), MASSPROP.</div>
+    <div id="cli-input-bar">
+      <span id="cli-prompt-label">Command:</span>
+      <input type="text" id="cli-input" autocomplete="off" spellcheck="false">
+    </div>
+  </div>
+
+  <!-- Bottom Status Bar -->
+  <footer id="status-bar">
+    <div class="status-left">
+      <span class="coord-pill" id="coord-display">0.0000, 0.0000, 0.0000</span>
+    </div>
+    <div class="status-right">
+      <span class="toggle-chip active" id="chip-snap" onclick="toggleSetting('snap')">SNAP</span>
+      <span class="toggle-chip active" id="chip-grid" onclick="toggleSetting('grid')">GRID</span>
+      <span class="toggle-chip" id="chip-ortho" onclick="toggleSetting('ortho')">ORTHO (F8)</span>
+      <span class="toggle-chip active" id="chip-osnap" onclick="toggleSetting('osnap')">OSNAP (F3)</span>
+    </div>
+  </footer>
+
+<script>
+/**
+ * Modern 2D CAD Engine
+ * Feature Set: AutoCAD 2000 standard commands, layer/property styling, DXF R12/2000 IO
+ */
+
+const canvas = document.getElementById('cad-canvas');
+const ctx = canvas.getContext('2d');
+
+const CAD = {
+  entities: [],
+  layers: {
+    '0': { name: '0', color: '#ffffff', visible: true }
+  },
+  activeLayer: '0',
+  currentProps: {
+    color: 'ByLayer',
+    linetype: 'ByLayer',
+    lineweight: 'ByLayer'
+  },
+  undoStack: [],
+  redoStack: [],
+  clipboard: [],
+
+  // Viewport
+  pan: { x: 0, y: 0 },
+  zoom: 1.0,
+  gridBase: 10,
+  settings: {
+    grid: true,
+    snap: false,
+    ortho: false,
+    osnap: true
+  },
+
+  // Command Engine
+  cmd: null,
+  step: 0,
+  tempPoints: [],
+  cmdData: {},
+  selection: [],
+  windowSelect: null,
+  cursorWorld: { x: 0, y: 0 },
+  activeSnap: null
+};
+
+// --- Vector Math ---
+const Vec = {
+  add: (a, b) => ({ x: a.x + b.x, y: a.y + b.y }),
+  sub: (a, b) => ({ x: a.x - b.x, y: a.y - b.y }),
+  dist: (a, b) => Math.hypot(b.x - a.x, b.y - a.y),
+  scale: (p, s) => ({ x: p.x * s, y: p.y * s }),
+  dot: (a, b) => a.x * b.x + a.y * b.y,
+  cross: (a, b) => a.x * b.y - a.y * b.x,
+  rot: (p, center, ang) => {
+    const c = Math.cos(ang), s = Math.sin(ang);
+    const dx = p.x - center.x, dy = p.y - center.y;
+    return { x: center.x + (dx * c - dy * s), y: center.y + (dx * s + dy * c) };
+  },
+  reflect: (p, a, b) => {
+    const dx = b.x - a.x, dy = b.y - a.y;
+    const l = Math.hypot(dx, dy);
+    if (l === 0) return { ...p };
+    const ux = dx / l, uy = dy / l;
+    const proj = (p.x - a.x) * ux + (p.y - a.y) * uy;
+    const px = a.x + proj * ux, py = a.y + proj * uy;
+    return { x: 2 * px - p.x, y: 2 * py - p.y };
+  }
+};
+
+// --- View Transformations ---
+function worldToScreen(p) {
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  return { x: cx + (p.x - CAD.pan.x) * CAD.zoom, y: cy - (p.y - CAD.pan.y) * CAD.zoom };
+}
+
+function screenToWorld(sp) {
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  return { x: CAD.pan.x + (sp.x - cx) / CAD.zoom, y: CAD.pan.y - (sp.y - cy) / CAD.zoom };
+}
+
+// --- Snapping System ---
+function evaluateSnaps(worldPt) {
+  if (!CAD.settings.osnap) return null;
+  const tol = 12 / CAD.zoom;
+  let best = null, minDist = tol;
+
+  function test(pt, type) {
+    const d = Vec.dist(worldPt, pt);
+    if (d < minDist) { minDist = d; best = { x: pt.x, y: pt.y, type }; }
+  }
+
+  for (const ent of CAD.entities) {
+    if (!CAD.layers[ent.layer]?.visible) continue;
+    if (ent.type === 'LINE') {
+      test(ent.p1, 'END'); test(ent.p2, 'END');
+      test(Vec.scale(Vec.add(ent.p1, ent.p2), 0.5), 'MID');
+    } else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE') {
+      test(ent.center, 'CEN');
+    } else if (ent.type === 'PLINE') {
+      ent.points.forEach((p, idx) => {
+        test(p, 'END');
+        if (idx < ent.points.length - 1) test(Vec.scale(Vec.add(p, ent.points[idx+1]), 0.5), 'MID');
+      });
+    } else if (ent.type === 'POINT') {
+      test(ent.p, 'NOD');
+    }
+  }
+  return best;
+}
+
+// --- Hit Testing ---
+function pointToSegmentDist(p, a, b) {
+  const l2 = (b.x - a.x) ** 2 + (b.y - a.y) ** 2;
+  if (l2 === 0) return Vec.dist(p, a);
+  let t = Math.max(0, Math.min(1, ((p.x - a.x) * (b.x - a.x) + (p.y - a.y) * (b.y - a.y)) / l2));
+  return Vec.dist(p, { x: a.x + t * (b.x - a.x), y: a.y + t * (b.y - a.y) });
+}
+
+function hitTest(ent, p, tol) {
+  if (ent.type === 'LINE') return pointToSegmentDist(p, ent.p1, ent.p2) <= tol;
+  if (ent.type === 'POINT') return Vec.dist(p, ent.p) <= tol * 1.5;
+  if (ent.type === 'CIRCLE') return Math.abs(Vec.dist(p, ent.center) - ent.r) <= tol;
+  if (ent.type === 'ELLIPSE') {
+    const d = Vec.dist(p, ent.center);
+    return Math.abs(d - (ent.rx + ent.ry) / 2) <= tol * 1.5; // Quick bounding test
+  }
+  if (ent.type === 'ARC') {
+    if (Math.abs(Vec.dist(p, ent.center) - ent.r) > tol) return false;
+    let a = Math.atan2(p.y - ent.center.y, p.x - ent.center.x);
+    if (a < 0) a += Math.PI * 2;
+    let sa = ent.startAngle % (Math.PI * 2), ea = ent.endAngle % (Math.PI * 2);
+    if (sa < 0) sa += Math.PI * 2; if (ea < 0) ea += Math.PI * 2;
+    return sa <= ea ? (a >= sa && a <= ea) : (a >= sa || a <= ea);
+  }
+  if (ent.type === 'PLINE' || ent.type === 'SPLINE') {
+    for (let i = 0; i < ent.points.length - 1; i++) {
+      if (pointToSegmentDist(p, ent.points[i], ent.points[i+1]) <= tol) return true;
+    }
+    if (ent.closed && ent.points.length > 2) {
+      return pointToSegmentDist(p, ent.points[ent.points.length - 1], ent.points[0]) <= tol;
+    }
+  }
+  return false;
+}
+
+// --- Render Engine ---
+function getEntityRenderStyle(ent, isSelected) {
+  const layer = CAD.layers[ent.layer] || CAD.layers['0'];
+  let stroke = isSelected ? '#00d2ff' : (ent.color === 'ByLayer' ? layer.color : ent.color);
+  let weight = (ent.lineweight === 'ByLayer' ? 1 : parseInt(ent.lineweight, 10)) * (isSelected ? 1.5 : 1);
+  let dash = [];
+
+  const lt = ent.linetype === 'ByLayer' ? 'Continuous' : ent.linetype;
+  if (lt === 'Dashed') dash = [6, 4];
+  else if (lt === 'Center') dash = [12, 3, 3, 3];
+  else if (lt === 'Dot') dash = [2, 3];
+
+  return { stroke, weight, dash };
+}
+
+function render() {
+  ctx.save();
+  ctx.fillStyle = '#18191c';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+  if (CAD.settings.grid) drawGrid();
+
+  // Draw CAD Entities
+  for (const ent of CAD.entities) {
+    const layer = CAD.layers[ent.layer] || CAD.layers['0'];
+    if (!layer.visible) continue;
+
+    const isSelected = CAD.selection.includes(ent);
+    const style = getEntityRenderStyle(ent, isSelected);
+
+    ctx.strokeStyle = style.stroke;
+    ctx.lineWidth = style.weight;
+    ctx.setLineDash(style.dash);
+
+    if (ent.type === 'LINE') {
+      const a = worldToScreen(ent.p1), b = worldToScreen(ent.p2);
+      ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.stroke();
+    } else if (ent.type === 'POINT') {
+      const sp = worldToScreen(ent.p);
+      ctx.fillStyle = style.stroke;
+      ctx.beginPath(); ctx.arc(sp.x, sp.y, 3, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(sp.x - 6, sp.y); ctx.lineTo(sp.x + 6, sp.y);
+      ctx.moveTo(sp.x, sp.y - 6); ctx.lineTo(sp.x, sp.y + 6); ctx.stroke();
+    } else if (ent.type === 'CIRCLE') {
+      const c = worldToScreen(ent.center);
+      ctx.beginPath(); ctx.arc(c.x, c.y, ent.r * CAD.zoom, 0, Math.PI * 2); ctx.stroke();
+    } else if (ent.type === 'ARC') {
+      const c = worldToScreen(ent.center);
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, ent.r * CAD.zoom, -ent.startAngle, -ent.endAngle, true);
+      ctx.stroke();
+    } else if (ent.type === 'ELLIPSE') {
+      const c = worldToScreen(ent.center);
+      ctx.beginPath();
+      ctx.ellipse(c.x, c.y, ent.rx * CAD.zoom, ent.ry * CAD.zoom, -ent.rot, 0, Math.PI * 2);
+      ctx.stroke();
+    } else if (ent.type === 'PLINE' || ent.type === 'SPLINE') {
+      if (ent.points.length > 0) {
+        ctx.beginPath();
+        const p0 = worldToScreen(ent.points[0]);
+        ctx.moveTo(p0.x, p0.y);
+        for (let i = 1; i < ent.points.length; i++) {
+          const pi = worldToScreen(ent.points[i]);
+          ctx.lineTo(pi.x, pi.y);
+        }
+        if (ent.closed) ctx.closePath();
+        ctx.stroke();
+      }
+    }
+  }
+
+  renderGhosts();
+  renderOverlays();
+  ctx.restore();
+}
+
+function drawGrid() {
+  let step = CAD.gridBase;
+  while (step * CAD.zoom < 25) step *= 5;
+  while (step * CAD.zoom > 120) step /= 2;
+
+  const bl = screenToWorld({ x: 0, y: canvas.height });
+  const tr = screenToWorld({ x: canvas.width, y: 0 });
+  const sx = Math.floor(bl.x / step) * step, ex = Math.ceil(tr.x / step) * step;
+  const sy = Math.floor(bl.y / step) * step, ey = Math.ceil(tr.y / step) * step;
+
+  ctx.lineWidth = 0.5;
+  ctx.strokeStyle = '#25262c';
+  ctx.beginPath();
+  for (let x = sx; x <= ex; x += step) {
+    const p1 = worldToScreen({ x, y: bl.y }), p2 = worldToScreen({ x, y: tr.y });
+    ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+  }
+  for (let y = sy; y <= ey; y += step) {
+    const p1 = worldToScreen({ x: bl.x, y }), p2 = worldToScreen({ x: tr.x, y });
+    ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y);
+  }
+  ctx.stroke();
+
+  // Primary Cross Axis (Origin X0, Y0)
+  const o = worldToScreen({ x: 0, y: 0 });
+  ctx.strokeStyle = '#3e414d';
+  ctx.beginPath();
+  ctx.moveTo(o.x, 0); ctx.lineTo(o.x, canvas.height);
+  ctx.moveTo(0, o.y); ctx.lineTo(canvas.width, o.y);
+  ctx.stroke();
+}
+
+function renderGhosts() {
+  if (!CAD.cmd) return;
+  const cur = CAD.cursorWorld;
+  ctx.setLineDash([3, 3]);
+  ctx.strokeStyle = '#00d2ff';
+  ctx.lineWidth = 1;
+
+  if (CAD.cmd === 'LINE' && CAD.tempPoints.length === 1) {
+    const p1 = worldToScreen(CAD.tempPoints[0]), p2 = worldToScreen(cur);
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+  } else if (CAD.cmd === 'CIRCLE' && CAD.tempPoints.length === 1) {
+    const c = worldToScreen(CAD.tempPoints[0]);
+    ctx.beginPath(); ctx.arc(c.x, c.y, Vec.dist(CAD.tempPoints[0], cur) * CAD.zoom, 0, Math.PI * 2); ctx.stroke();
+  } else if (CAD.cmd === 'ELLIPSE' && CAD.tempPoints.length === 1) {
+    const c = worldToScreen(CAD.tempPoints[0]);
+    const rx = Math.abs(cur.x - CAD.tempPoints[0].x) * CAD.zoom;
+    const ry = Math.abs(cur.y - CAD.tempPoints[0].y) * CAD.zoom;
+    ctx.beginPath(); ctx.ellipse(c.x, c.y, rx || 1, ry || 1, 0, 0, Math.PI * 2); ctx.stroke();
+  } else if (CAD.cmd === 'RECTANGLE' && CAD.tempPoints.length === 1) {
+    const p1 = worldToScreen(CAD.tempPoints[0]), p2 = worldToScreen(cur);
+    ctx.strokeRect(p1.x, p1.y, p2.x - p1.x, p2.y - p1.y);
+  } else if ((CAD.cmd === 'PLINE' || CAD.cmd === 'SPLINE') && CAD.tempPoints.length > 0) {
+    const p0 = worldToScreen(CAD.tempPoints[CAD.tempPoints.length - 1]), p1 = worldToScreen(cur);
+    ctx.beginPath(); ctx.moveTo(p0.x, p0.y); ctx.lineTo(p1.x, p1.y); ctx.stroke();
+  } else if (CAD.cmd === 'MIRROR' && CAD.tempPoints.length === 1) {
+    const p1 = worldToScreen(CAD.tempPoints[0]), p2 = worldToScreen(cur);
+    ctx.beginPath(); ctx.moveTo(p1.x, p1.y); ctx.lineTo(p2.x, p2.y); ctx.stroke();
+    // Ghost mirrored objects
+    for (const ent of CAD.selection) {
+      if (ent.type === 'LINE') {
+        const m1 = worldToScreen(Vec.reflect(ent.p1, CAD.tempPoints[0], cur));
+        const m2 = worldToScreen(Vec.reflect(ent.p2, CAD.tempPoints[0], cur));
+        ctx.beginPath(); ctx.moveTo(m1.x, m1.y); ctx.lineTo(m2.x, m2.y); ctx.stroke();
+      }
+    }
+  }
+  ctx.setLineDash([]);
+}
+
+function renderOverlays() {
+  // Window select
+  if (CAD.windowSelect) {
+    const p1 = worldToScreen(CAD.windowSelect.p1), p2 = worldToScreen(CAD.windowSelect.p2);
+    const w = p2.x - p1.x, h = p2.y - p1.y;
+    const isCrossing = w < 0;
+    ctx.fillStyle = isCrossing ? 'rgba(0, 230, 118, 0.12)' : 'rgba(0, 140, 255, 0.12)';
+    ctx.strokeStyle = isCrossing ? '#00e676' : '#008cff';
+    ctx.setLineDash(isCrossing ? [4, 3] : []);
+    ctx.fillRect(p1.x, p1.y, w, h);
+    ctx.strokeRect(p1.x, p1.y, w, h);
+    ctx.setLineDash([]);
+  }
+
+  // OSnap Marker
+  if (CAD.activeSnap) {
+    const sp = worldToScreen(CAD.activeSnap);
+    ctx.strokeStyle = '#ffeb3b';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    if (CAD.activeSnap.type === 'END') ctx.strokeRect(sp.x - 5, sp.y - 5, 10, 10);
+    else if (CAD.activeSnap.type === 'MID') {
+      ctx.moveTo(sp.x, sp.y - 6); ctx.lineTo(sp.x + 6, sp.y + 5); ctx.lineTo(sp.x - 6, sp.y + 5); ctx.closePath(); ctx.stroke();
+    } else if (CAD.activeSnap.type === 'CEN') ctx.arc(sp.x, sp.y, 5, 0, Math.PI * 2);
+    else ctx.strokeRect(sp.x - 3, sp.y - 3, 6, 6);
+    ctx.stroke();
+  }
+
+  // Full-screen Crosshair
+  const c = worldToScreen(CAD.cursorWorld);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.35)';
+  ctx.lineWidth = 0.8;
+  ctx.beginPath();
+  ctx.moveTo(c.x, 0); ctx.lineTo(c.x, canvas.height);
+  ctx.moveTo(0, c.y); ctx.lineTo(canvas.width, c.y);
+  ctx.stroke();
+  ctx.strokeRect(c.x - 4, c.y - 4, 8, 8);
+}
+
+// --- History / Clipboard ---
+function recordUndo() {
+  CAD.undoStack.push(JSON.stringify({ entities: CAD.entities, layers: CAD.layers }));
+  CAD.redoStack = [];
+}
+function undo() {
+  if (!CAD.undoStack.length) { logCLI("Already at oldest change.", 'log-warn'); return; }
+  CAD.redoStack.push(JSON.stringify({ entities: CAD.entities, layers: CAD.layers }));
+  const state = JSON.parse(CAD.undoStack.pop());
+  CAD.entities = state.entities; CAD.layers = state.layers; CAD.selection = [];
+  render(); updateLayerUI(); logCLI("Undo performed.");
+}
+function redo() {
+  if (!CAD.redoStack.length) { logCLI("Already at newest change.", 'log-warn'); return; }
+  CAD.undoStack.push(JSON.stringify({ entities: CAD.entities, layers: CAD.layers }));
+  const state = JSON.parse(CAD.redoStack.pop());
+  CAD.entities = state.entities; CAD.layers = state.layers; CAD.selection = [];
+  render(); updateLayerUI(); logCLI("Redo performed.");
+}
+function copy() {
+  if (!CAD.selection.length) return;
+  CAD.clipboard = JSON.parse(JSON.stringify(CAD.selection));
+  logCLI(`${CAD.selection.length} objects copied to clipboard.`, 'log-info');
+}
+function cut() {
+  if (!CAD.selection.length) return;
+  copy(); recordUndo();
+  CAD.entities = CAD.entities.filter(e => !CAD.selection.includes(e));
+  CAD.selection = []; render(); logCLI("Selection cut to clipboard.");
+}
+
+// --- Entity Creation Factory ---
+function createBaseEntity(type) {
+  return {
+    type,
+    layer: CAD.activeLayer,
+    color: CAD.currentProps.color,
+    linetype: CAD.currentProps.linetype,
+    lineweight: CAD.currentProps.lineweight
+  };
+}
+
+// --- Command Processor & Interactive Logic ---
+function startCommand(name) {
+  cancelActiveCommand();
+  CAD.cmd = name.toUpperCase();
+  CAD.step = 0;
+  CAD.tempPoints = [];
+  CAD.cmdData = {};
+
+  switch (CAD.cmd) {
+    case 'LINE': logCLI("LINE Specify first point:"); break;
+    case 'PLINE': logCLI("PLINE Specify start point:"); break;
+    case 'SPLINE': logCLI("SPLINE Specify start point:"); break;
+    case 'CIRCLE': logCLI("CIRCLE Specify center point:"); break;
+    case 'ARC': logCLI("ARC Specify start point of 3-point arc:"); break;
+    case 'RECTANGLE': logCLI("RECTANGLE Specify first corner:"); break;
+    case 'ELLIPSE': logCLI("ELLIPSE Specify center point:"); break;
+    case 'POINT': logCLI("POINT Specify point location:"); break;
+    case 'POLYGON':
+      CAD.cmdData.sides = 5;
+      logCLI("POLYGON Number of sides <5>:");
+      CAD.step = 10; // Prompt numeric input first
+      break;
+    case 'OFFSET':
+      CAD.cmdData.dist = 10;
+      logCLI("OFFSET Specify offset distance <10.0>:");
+      CAD.step = 10;
+      break;
+    case 'MIRROR':
+      if (!requireSelection("MIRROR")) break;
+      logCLI("MIRROR Specify first point of mirror line:");
+      break;
+    case 'MOVE':
+    case 'COPY':
+    case 'ROTATE':
+    case 'SCALE':
+      if (!requireSelection(CAD.cmd)) break;
+      logCLI(`${CAD.cmd} Specify base point:`);
+      break;
+    case 'TRIM':
+      logCLI("TRIM Select entity to trim nearest end:");
+      CAD.step = 0;
+      break;
+    case 'EXPLODE':
+      explodeSelection();
+      cancelActiveCommand();
+      break;
+    case 'ERASE':
+      if (CAD.selection.length > 0) {
+        recordUndo();
+        CAD.entities = CAD.entities.filter(e => !CAD.selection.includes(e));
+        logCLI(`${CAD.selection.length} objects erased.`);
+        CAD.selection = []; cancelActiveCommand();
+      } else {
+        logCLI("Select objects to ERASE:");
+        CAD.step = -1;
+      }
+      break;
+    case 'PASTE':
+      if (!CAD.clipboard.length) { logCLI("Clipboard is empty.", 'log-warn'); cancelActiveCommand(); }
+      else logCLI("PASTE Specify insertion point:");
+      break;
+    case 'MASSPROP':
+      calculateMassProp(); cancelActiveCommand(); break;
+    default:
+      logCLI(`Unknown command: ${name}`, 'log-warn');
+      cancelActiveCommand();
+  }
+  setPrompt(`${CAD.cmd}:`);
+  render();
+}
+
+function requireSelection(cmdName) {
+  if (CAD.selection.length === 0) {
+    logCLI(`Select objects for ${cmdName}:`);
+    CAD.step = -1;
+    return false;
+  }
+  return true;
+}
+
+function handlePointInput(pt) {
+  if (CAD.settings.ortho && CAD.tempPoints.length > 0) {
+    const prev = CAD.tempPoints[CAD.tempPoints.length - 1];
+    if (Math.abs(pt.x - prev.x) > Math.abs(pt.y - prev.y)) pt.y = prev.y;
+    else pt.x = prev.x;
+  }
+
+  switch (CAD.cmd) {
+    case 'LINE':
+      if (CAD.step === 0) {
+        CAD.tempPoints.push(pt); CAD.step = 1;
+        logCLI("Specify next point:");
+      } else {
+        recordUndo();
+        CAD.entities.push({ ...createBaseEntity('LINE'), p1: CAD.tempPoints[0], p2: pt });
+        CAD.tempPoints = [pt];
+        logCLI("Specify next point [or press Enter/Esc]:");
+      }
+      break;
+
+    case 'POINT':
+      recordUndo();
+      CAD.entities.push({ ...createBaseEntity('POINT'), p: pt });
+      logCLI("Specify next point [or Esc]:");
+      break;
+
+    case 'PLINE':
+    case 'SPLINE':
+      CAD.tempPoints.push(pt);
+      CAD.step++;
+      logCLI("Specify next point [Enter to complete]:");
+      break;
+
+    case 'CIRCLE':
+      if (CAD.step === 0) {
+        CAD.tempPoints.push(pt); CAD.step = 1;
+        logCLI("Specify radius or point on circle:");
+      } else {
+        recordUndo();
+        CAD.entities.push({ ...createBaseEntity('CIRCLE'), center: CAD.tempPoints[0], r: Vec.dist(CAD.tempPoints[0], pt) });
+        cancelActiveCommand();
+      }
+      break;
+
+    case 'ELLIPSE':
+      if (CAD.step === 0) {
+        CAD.tempPoints.push(pt); CAD.step = 1;
+        logCLI("Specify axis endpoint:");
+      } else {
+        recordUndo();
+        const rx = Math.abs(pt.x - CAD.tempPoints[0].x) || 10;
+        const ry = Math.abs(pt.y - CAD.tempPoints[0].y) || 5;
+        CAD.entities.push({ ...createBaseEntity('ELLIPSE'), center: CAD.tempPoints[0], rx, ry, rot: 0 });
+        cancelActiveCommand();
+      }
+      break;
+
+    case 'RECTANGLE':
+      if (CAD.step === 0) {
+        CAD.tempPoints.push(pt); CAD.step = 1;
+        logCLI("Specify opposite corner:");
+      } else {
+        recordUndo();
+        const p1 = CAD.tempPoints[0], p3 = pt;
+        CAD.entities.push({
+          ...createBaseEntity('PLINE'),
+          points: [p1, { x: p3.x, y: p1.y }, p3, { x: p1.x, y: p3.y }],
+          closed: true
+        });
+        cancelActiveCommand();
+      }
+      break;
+
+    case 'POLYGON':
+      if (CAD.step === 1) { // Center picked
+        recordUndo();
+        const center = CAD.tempPoints[0];
+        const r = Vec.dist(center, pt);
+        const sides = CAD.cmdData.sides || 5;
+        const pts = [];
+        const baseAng = Math.atan2(pt.y - center.y, pt.x - center.x);
+        for (let i = 0; i < sides; i++) {
+          const a = baseAng + (i * 2 * Math.PI / sides);
+          pts.push({ x: center.x + r * Math.cos(a), y: center.y + r * Math.sin(a) });
+        }
+        CAD.entities.push({ ...createBaseEntity('PLINE'), points: pts, closed: true });
+        cancelActiveCommand();
+      }
+      break;
+
+    case 'ARC':
+      CAD.tempPoints.push(pt);
+      if (CAD.tempPoints.length === 1) logCLI("Specify second point:");
+      else if (CAD.tempPoints.length === 2) logCLI("Specify end point:");
+      else if (CAD.tempPoints.length === 3) {
+        create3PointArc(CAD.tempPoints[0], CAD.tempPoints[1], CAD.tempPoints[2]);
+        cancelActiveCommand();
+      }
+      break;
+
+    case 'MIRROR':
+      if (CAD.step === 0) {
+        CAD.tempPoints.push(pt); CAD.step = 1;
+        logCLI("Specify second point of mirror line:");
+      } else {
+        recordUndo();
+        const a = CAD.tempPoints[0], b = pt;
+        for (const ent of CAD.selection) {
+          mirrorEntity(ent, a, b);
+        }
+        logCLI("Objects mirrored.");
+        cancelActiveCommand();
+      }
+      break;
+
+    case 'OFFSET':
+      if (CAD.step === 0) {
+        // Pick entity to offset
+        const ent = findEntityAt(pt);
+        if (ent) {
+          CAD.cmdData.target = ent;
+          CAD.step = 1;
+          logCLI("Specify side to offset:");
+        }
+      } else if (CAD.step === 1) {
+        recordUndo();
+        performOffset(CAD.cmdData.target, pt, CAD.cmdData.dist);
+        cancelActiveCommand();
+      }
+      break;
+
+    case 'MOVE':
+      if (CAD.step === 0) { CAD.tempPoints.push(pt); CAD.step = 1; logCLI("Specify second displacement point:"); }
+      else {
+        recordUndo();
+        const delta = Vec.sub(pt, CAD.tempPoints[0]);
+        CAD.selection.forEach(e => displaceEntity(e, delta));
+        cancelActiveCommand();
+      }
+      break;
+
+    case 'COPY':
+      if (CAD.step === 0) { CAD.tempPoints.push(pt); CAD.step = 1; logCLI("Specify second displacement point:"); }
+      else {
+        recordUndo();
+        const delta = Vec.sub(pt, CAD.tempPoints[0]);
+        const clones = CAD.selection.map(e => {
+          const clone = JSON.parse(JSON.stringify(e));
+          displaceEntity(clone, delta);
+          CAD.entities.push(clone);
+          return clone;
+        });
+        CAD.selection = clones;
+        cancelActiveCommand();
+      }
+      break;
+
+    case 'TRIM':
+      performTrim(pt);
+      break;
+
+    case 'PASTE':
+      recordUndo();
+      pasteEntities(pt);
+      cancelActiveCommand();
+      break;
+  }
+  render();
+}
+
+// --- Modify Implementations ---
+function performOffset(ent, sidePt, dist) {
+  if (ent.type === 'CIRCLE') {
+    const isOut = Vec.dist(sidePt, ent.center) > ent.r;
+    const nr = isOut ? ent.r + dist : Math.max(1, ent.r - dist);
+    CAD.entities.push({ ...JSON.parse(JSON.stringify(ent)), r: nr });
+  } else if (ent.type === 'LINE') {
+    const dx = ent.p2.x - ent.p1.x, dy = ent.p2.y - ent.p1.y;
+    const len = Math.hypot(dx, dy);
+    if (len === 0) return;
+    const nx = -dy / len, ny = dx / len;
+    // Determine which side of line
+    const cross = (sidePt.x - ent.p1.x) * dy - (sidePt.y - ent.p1.y) * dx;
+    const sign = cross > 0 ? 1 : -1;
+    const off = { x: nx * dist * sign, y: ny * dist * sign };
+    CAD.entities.push({
+      ...JSON.parse(JSON.stringify(ent)),
+      p1: Vec.add(ent.p1, off),
+      p2: Vec.add(ent.p2, off)
+    });
+  }
+}
+
+function performTrim(clickPt) {
+  const hit = findEntityAt(clickPt);
+  if (!hit || hit.type !== 'LINE') {
+    logCLI("TRIM only currently targets lines directly.", 'log-warn');
+    return;
+  }
+  recordUndo();
+  // Shorten the end of the line closest to the click point by 25%
+  const d1 = Vec.dist(clickPt, hit.p1), d2 = Vec.dist(clickPt, hit.p2);
+  if (d1 < d2) {
+    hit.p1 = Vec.add(hit.p1, Vec.scale(Vec.sub(hit.p2, hit.p1), 0.25));
+  } else {
+    hit.p2 = Vec.add(hit.p2, Vec.scale(Vec.sub(hit.p1, hit.p2), 0.25));
+  }
+  logCLI("Segment trimmed.");
+}
+
+function mirrorEntity(ent, a, b) {
+  if (ent.type === 'LINE') {
+    ent.p1 = Vec.reflect(ent.p1, a, b);
+    ent.p2 = Vec.reflect(ent.p2, a, b);
+  } else if (ent.type === 'CIRCLE' || ent.type === 'ELLIPSE') {
+    ent.center = Vec.reflect(ent.center, a, b);
+  } else if (ent.type === 'PLINE' || ent.type === 'SPLINE') {
+    ent.points = ent.points.map(p => Vec.reflect(p, a, b));
+  }
+}
+
+function explodeSelection() {
+  if (!CAD.selection.length) { logCLI("No objects selected to EXPLODE.", 'log-warn'); return; }
+  recordUndo();
+  let count = 0;
+  const newEntities = [];
+  CAD.entities = CAD.entities.filter(ent => {
+    if (!CAD.selection.includes(ent)) return true;
+    if (ent.type === 'PLINE' || ent.type === 'SPLINE') {
+      for (let i = 0; i < ent.points.length - 1; i++) {
+        newEntities.push({
+          ...createBaseEntity('LINE'),
+          layer: ent.layer, color: ent.color, linetype: ent.linetype,
+          p1: ent.points[i], p2: ent.points[i+1]
+        });
+        count++;
+      }
+      if (ent.closed && ent.points.length > 2) {
+        newEntities.push({
+          ...createBaseEntity('LINE'),
+          layer: ent.layer, color: ent.color, linetype: ent.linetype,
+          p1: ent.points[ent.points.length - 1], p2: ent.points[0]
+        });
+        count++;
+      }
+      return false; // Remove container polyline
+    }
+    return true;
+  });
+  CAD.entities.push(...newEntities);
+  CAD.selection = [];
+  logCLI(`Exploded into ${count} line segments.`);
+}
+
+function displaceEntity(ent, d) {
+  if (ent.type === 'LINE') { ent.p1 = Vec.add(ent.p1, d); ent.p2 = Vec.add(ent.p2, d); }
+  else if (ent.type === 'CIRCLE' || ent.type === 'ARC' || ent.type === 'ELLIPSE') ent.center = Vec.add(ent.center, d);
+  else if (ent.type === 'POINT') ent.p = Vec.add(ent.p, d);
+  else if (ent.points) ent.points = ent.points.map(p => Vec.add(p, d));
+}
+
+function create3PointArc(p1, p2, p3) {
+  const d = 2 * (p1.x * (p2.y - p3.y) + p2.x * (p3.y - p1.y) + p3.x * (p1.y - p2.y));
+  if (Math.abs(d) < 1e-6) { logCLI("Points are collinear.", 'log-warn'); return; }
+  const u = ((p1.x**2 + p1.y**2)*(p2.y - p3.y) + (p2.x**2 + p2.y**2)*(p3.y - p1.y) + (p3.x**2 + p3.y**2)*(p1.y - p2.y)) / d;
+  const v = ((p1.x**2 + p1.y**2)*(p3.x - p2.x) + (p2.x**2 + p2.y**2)*(p1.x - p3.x) + (p3.x**2 + p3.y**2)*(p2.x - p1.x)) / d;
+  const center = { x: u, y: v }, r = Vec.dist(center, p1);
+  let a1 = Math.atan2(p1.y - center.y, p1.x - center.x), a3 = Math.atan2(p3.y - center.y, p3.x - center.x);
+  recordUndo();
+  CAD.entities.push({ ...createBaseEntity('ARC'), center, r, startAngle: a1, endAngle: a3 });
+}
+
+function cancelActiveCommand() {
+  if ((CAD.cmd === 'PLINE' || CAD.cmd === 'SPLINE') && CAD.tempPoints.length >= 2) {
+    recordUndo();
+    CAD.entities.push({
+      ...createBaseEntity(CAD.cmd),
+      points: [...CAD.tempPoints],
+      closed: false
+    });
+    logCLI(`${CAD.cmd} completed.`);
+  }
+  CAD.cmd = null; CAD.step = 0; CAD.tempPoints = []; CAD.cmdData = {}; CAD.windowSelect = null;
+  setPrompt("Command:");
+  render();
+}
+
+// --- Mass Properties Engine (MASSPROP) ---
+function calculateMassProp() {
+  const target = CAD.selection.length > 0 ? CAD.selection : CAD.entities;
+  if (!target.length) { logCLI("MASSPROP: No entities found.", 'log-warn'); return; }
+
+  let area = 0, perim = 0, cx = 0, cy = 0;
+  for (const ent of target) {
+    if (ent.type === 'CIRCLE') {
+      const a = Math.PI * ent.r * ent.r;
+      area += a; perim += 2 * Math.PI * ent.r;
+      cx += ent.center.x * a; cy += ent.center.y * a;
+    } else if (ent.type === 'PLINE' && ent.closed && ent.points.length >= 3) {
+      let a = 0, tcx = 0, tcy = 0;
+      for (let i = 0; i < ent.points.length; i++) {
+        const j = (i + 1) % ent.points.length;
+        const c = ent.points[i].x * ent.points[j].y - ent.points[j].x * ent.points[i].y;
+        a += c; tcx += (ent.points[i].x + ent.points[j].x) * c; tcy += (ent.points[i].y + ent.points[j].y) * c;
+        perim += Vec.dist(ent.points[i], ent.points[j]);
+      }
+      a = Math.abs(a) / 2; area += a;
+      if (a > 1e-5) { cx += tcx / 6; cy += tcy / 6; }
+    } else if (ent.type === 'LINE') {
+      perim += Vec.dist(ent.p1, ent.p2);
+    }
+  }
+
+  logCLI("---------------- 2D MASS PROPERTIES ----------------", 'log-success');
+  logCLI(`Evaluated Entities: ${target.length}`);
+  logCLI(`Total Area:         ${area.toFixed(4)}`);
+  logCLI(`Perimeter/Length:   ${perim.toFixed(4)}`);
+  logCLI(`Centroid:           X = ${(area > 0 ? cx / area : 0).toFixed(4)}, Y = ${(area > 0 ? cy / area : 0).toFixed(4)}`);
+  logCLI("----------------------------------------------------", 'log-success');
+}
+
+// --- DXF Import / Export Engine ---
+function exportDXF() {
+  let out = "0\nSECTION\n2\nHEADER\n0\nENDSEC\n0\nSECTION\n2\nTABLES\n0\nTABLE\n2\nLAYER\n";
+  for (const name in CAD.layers) {
+    out += `0\nLAYER\n2\n${name}\n70\n0\n62\n7\n6\nCONTINUOUS\n`;
+  }
+  out += "0\nENDTAB\n0\nENDSEC\n0\nSECTION\n2\nENTITIES\n";
+
+  for (const ent of CAD.entities) {
+    const linetype = ent.linetype === 'ByLayer' ? 'CONTINUOUS' : ent.linetype.toUpperCase();
+    if (ent.type === 'LINE') {
+      out += `0\nLINE\n8\n${ent.layer}\n6\n${linetype}\n10\n${ent.p1.x}\n20\n${ent.p1.y}\n30\n0\n11\n${ent.p2.x}\n21\n${ent.p2.y}\n31\n0\n`;
+    } else if (ent.type === 'CIRCLE') {
+      out += `0\nCIRCLE\n8\n${ent.layer}\n6\n${linetype}\n10\n${ent.center.x}\n20\n${ent.center.y}\n30\n0\n40\n${ent.r}\n`;
+    } else if (ent.type === 'POINT') {
+      out += `0\nPOINT\n8\n${ent.layer}\n10\n${ent.p.x}\n20\n${ent.p.y}\n30\n0\n`;
+    } else if (ent.type === 'PLINE') {
+      out += `0\nLWPOLYLINE\n8\n${ent.layer}\n90\n${ent.points.length}\n70\n${ent.closed ? 1 : 0}\n`;
+      for (const p of ent.points) out += `10\n${p.x}\n20\n${p.y}\n`;
+    }
+  }
+  out += "0\nENDSEC\n0\nEOF\n";
+
+  const blob = new Blob([out], { type: 'application/dxf' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = "drawing.dxf";
+  a.click();
+  logCLI("Exported drawing.dxf successfully.", 'log-success');
+}
+
+function importDXF(evt) {
+  const file = evt.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      parseDXF(e.target.result);
+      logCLI(`Imported DXF file: ${file.name}`, 'log-success');
+      zoomExtents();
+    } catch (err) {
+      logCLI("DXF Parse Error: " + err.message, 'log-warn');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function parseDXF(text) {
+  const lines = text.split(/\r\n|\r|\n/);
+  const pairs = [];
+  for (let i = 0; i < lines.length - 1; i += 2) {
+    pairs.push({ code: parseInt(lines[i].trim(), 10), val: lines[i+1].trim() });
+  }
+
+  recordUndo();
+  CAD.entities = [];
+  let inEnts = false, curr = null;
+
+  for (let i = 0; i < pairs.length; i++) {
+    const { code, val } = pairs[i];
+    if (code === 0 && val === 'SECTION' && pairs[i+1]?.val === 'ENTITIES') { inEnts = true; continue; }
+    if (code === 0 && val === 'ENDSEC') { inEnts = false; }
+    if (!inEnts) continue;
+
+    if (code === 0) {
+      if (curr) CAD.entities.push(curr);
+      curr = null;
+      if (['LINE', 'CIRCLE', 'ARC', 'POINT', 'LWPOLYLINE'].includes(val)) {
+        curr = {
+          type: val === 'LWPOLYLINE' ? 'PLINE' : val,
+          layer: '0', color: 'ByLayer', linetype: 'ByLayer', lineweight: 'ByLayer'
+        };
+        if (curr.type === 'PLINE') { curr.points = []; curr.closed = false; }
+      }
+      continue;
+    }
+
+    if (curr) {
+      if (code === 8) {
+        curr.layer = val;
+        if (!CAD.layers[val]) CAD.layers[val] = { name: val, color: '#ffffff', visible: true };
+      }
+      if (curr.type === 'LINE') {
+        if (code === 10) curr.p1 = curr.p1 || {}, curr.p1.x = parseFloat(val);
+        if (code === 20) curr.p1 = curr.p1 || {}, curr.p1.y = parseFloat(val);
+        if (code === 11) curr.p2 = curr.p2 || {}, curr.p2.x = parseFloat(val);
+        if (code === 21) curr.p2 = curr.p2 || {}, curr.p2.y = parseFloat(val);
+      } else if (curr.type === 'CIRCLE') {
+        if (code === 10) curr.center = curr.center || {}, curr.center.x = parseFloat(val);
+        if (code === 20) curr.center = curr.center || {}, curr.center.y = parseFloat(val);
+        if (code === 40) curr.r = parseFloat(val);
+      } else if (curr.type === 'POINT') {
+        if (code === 10) curr.p = curr.p || {}, curr.p.x = parseFloat(val);
+        if (code === 20) curr.p = curr.p || {}, curr.p.y = parseFloat(val);
+      } else if (curr.type === 'PLINE') {
+        if (code === 70) curr.closed = (parseInt(val, 10) & 1) === 1;
+        if (code === 10) {
+          const pt = { x: parseFloat(val), y: 0 };
+          if (pairs[i+1]?.code === 20) { i++; pt.y = parseFloat(pairs[i].val); }
+          curr.points.push(pt);
+        }
+      }
+    }
+  }
+  if (curr) CAD.entities.push(curr);
+  updateLayerUI();
+  render();
+}
+
+// --- Zoom & View Controls ---
+function zoomExtents() {
+  if (!CAD.entities.length) { CAD.pan = { x: 0, y: 0 }; CAD.zoom = 1.0; render(); return; }
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  function exp(p) {
+    minX = Math.min(minX, p.x); maxX = Math.max(maxX, p.x);
+    minY = Math.min(minY, p.y); maxY = Math.max(maxY, p.y);
+  }
+  for (const ent of CAD.entities) {
+    if (ent.type === 'LINE') { exp(ent.p1); exp(ent.p2); }
+    else if (ent.center) { exp({ x: ent.center.x - ent.r, y: ent.center.y - ent.r }); exp({ x: ent.center.x + ent.r, y: ent.center.y + ent.r }); }
+    else if (ent.p) exp(ent.p);
+    else if (ent.points) ent.points.forEach(exp);
+  }
+  const w = (maxX - minX) || 50, h = (maxY - minY) || 50;
+  CAD.zoom = Math.min((canvas.width * 0.8) / w, (canvas.height * 0.8) / h);
+  CAD.pan = { x: (minX + maxX) / 2, y: (minY + maxY) / 2 };
+  render();
+}
+
+// --- UI Interaction & Event Handlers ---
+let isPanning = false, panStart = { x: 0, y: 0 };
+
+function resizeCanvas() {
+  const box = document.getElementById('workspace-container');
+  canvas.width = box.clientWidth;
+  canvas.height = box.clientHeight;
+  render();
+}
+window.addEventListener('resize', resizeCanvas);
+
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button === 1 || (e.button === 0 && e.shiftKey && e.altKey)) {
+    isPanning = true;
+    panStart = { x: e.clientX, y: e.clientY };
+    return;
+  }
+  if (e.button === 0) {
+    const raw = screenToWorld({ x: e.offsetX, y: e.offsetY });
+    const snap = evaluateSnaps(raw);
+    const pt = snap ? { x: snap.x, y: snap.y } : raw;
+
+    if (CAD.cmd) {
+      if (CAD.step === -1) {
+        const hit = findEntityAt(pt);
+        if (hit && !CAD.selection.includes(hit)) {
+          CAD.selection.push(hit);
+          logCLI(`1 object added to selection. (Total: ${CAD.selection.length})`);
+        }
+      } else {
+        handlePointInput(pt);
+      }
+    } else {
+      const hit = findEntityAt(pt);
+      if (hit) {
+        CAD.selection = e.shiftKey ? (CAD.selection.includes(hit) ? CAD.selection.filter(x => x !== hit) : [...CAD.selection, hit]) : [hit];
+      } else {
+        CAD.windowSelect = { p1: raw, p2: raw };
+      }
+    }
+    render();
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  if (isPanning) {
+    CAD.pan.x -= (e.clientX - panStart.x) / CAD.zoom;
+    CAD.pan.y += (e.clientY - panStart.y) / CAD.zoom;
+    panStart = { x: e.clientX, y: e.clientY };
+    render();
+    return;
+  }
+  const raw = screenToWorld({ x: e.offsetX, y: e.offsetY });
+  CAD.activeSnap = evaluateSnaps(raw);
+  CAD.cursorWorld = CAD.activeSnap ? { x: CAD.activeSnap.x, y: CAD.activeSnap.y } : raw;
+
+  if (CAD.windowSelect) CAD.windowSelect.p2 = raw;
+  document.getElementById('coord-display').innerText = `${CAD.cursorWorld.x.toFixed(4)}, ${CAD.cursorWorld.y.toFixed(4)}, 0.0000`;
+  render();
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  if (e.button === 1) isPanning = false;
+  if (CAD.windowSelect) {
+    const x1 = Math.min(CAD.windowSelect.p1.x, CAD.windowSelect.p2.x), x2 = Math.max(CAD.windowSelect.p1.x, CAD.windowSelect.p2.x);
+    const y1 = Math.min(CAD.windowSelect.p1.y, CAD.windowSelect.p2.y), y2 = Math.max(CAD.windowSelect.p1.y, CAD.windowSelect.p2.y);
+    const isCrossing = CAD.windowSelect.p2.x < CAD.windowSelect.p1.x;
+
+    CAD.selection = CAD.entities.filter(ent => {
+      if (ent.type === 'LINE') {
+        const in1 = inBox(ent.p1, x1, y1, x2, y2), in2 = inBox(ent.p2, x1, y1, x2, y2);
+        return isCrossing ? (in1 || in2) : (in1 && in2);
+      }
+      if (ent.center) return inBox(ent.center, x1, y1, x2, y2);
+      if (ent.points) return isCrossing ? ent.points.some(p => inBox(p, x1, y1, x2, y2)) : ent.points.every(p => inBox(p, x1, y1, x2, y2));
+      return false;
+    });
+    CAD.windowSelect = null;
+    logCLI(`${CAD.selection.length} objects selected.`);
+    render();
+  }
+});
+
+canvas.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.15 : 0.85;
+  const before = screenToWorld({ x: e.offsetX, y: e.offsetY });
+  CAD.zoom *= factor;
+  const after = screenToWorld({ x: e.offsetX, y: e.offsetY });
+  CAD.pan.x += (before.x - after.x); CAD.pan.y += (before.y - after.y);
+  render();
+}, { passive: false });
+
+function inBox(p, x1, y1, x2, y2) { return p.x >= x1 && p.x <= x2 && p.y >= y1 && p.y <= y2; }
+
+function findEntityAt(p) {
+  const tol = 6 / CAD.zoom;
+  for (let i = CAD.entities.length - 1; i >= 0; i--) {
+    if (hitTest(CAD.entities[i], p, tol)) return CAD.entities[i];
+  }
+  return null;
+}
+
+// --- CLI Output & Input Handling ---
+const cliInput = document.getElementById('cli-input');
+const cliOutput = document.getElementById('cli-output');
+
+function logCLI(txt, cls = '') {
+  const el = document.createElement('div');
+  if (cls) el.className = cls;
+  el.innerText = txt;
+  cliOutput.appendChild(el);
+  cliOutput.scrollTop = cliOutput.scrollHeight;
+}
+function setPrompt(p) { document.getElementById('cli-prompt-label').innerText = p; }
+
+cliInput.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') {
+    const val = cliInput.value.trim();
+    cliInput.value = '';
+    parseCLICommand(val);
+  } else if (e.key === 'Escape') {
+    cancelActiveCommand();
+  }
+});
+
+window.addEventListener('keydown', (e) => {
+  if (document.activeElement === cliInput) return;
+  if (e.key === 'Escape') {
+    cancelActiveCommand(); CAD.selection = []; render();
+  } else if (e.key === 'Delete') {
+    if (CAD.selection.length) startCommand('ERASE');
+  } else if (e.ctrlKey && e.key.toLowerCase() === 'z') { e.preventDefault(); undo(); }
+  else if (e.ctrlKey && e.key.toLowerCase() === 'y') { e.preventDefault(); redo(); }
+  else if (e.ctrlKey && e.key.toLowerCase() === 'c') { e.preventDefault(); copy(); }
+  else if (e.ctrlKey && e.key.toLowerCase() === 'x') { e.preventDefault(); cut(); }
+  else if (e.ctrlKey && e.key.toLowerCase() === 'v') { e.preventDefault(); startCommand('PASTE'); }
+  else if (e.key === 'F3') { e.preventDefault(); toggleSetting('osnap'); }
+  else if (e.key === 'F8') { e.preventDefault(); toggleSetting('ortho'); }
+  else if (!e.ctrlKey && !e.altKey && e.key.length === 1) {
+    cliInput.focus();
+  }
+});
+
+function parseCLICommand(str) {
+  if (!str) {
+    if (CAD.cmd) {
+      if (CAD.step === -1 && CAD.selection.length > 0) {
+        CAD.step = 0;
+        logCLI(`Base point for ${CAD.cmd}:`);
+      } else {
+        cancelActiveCommand();
+      }
+    }
+    return;
+  }
+
+  logCLI(`Command: ${str}`, 'log-cmd');
+
+  // Value step for commands (e.g. Offset distance, Polygon sides)
+  if (!isNaN(parseFloat(str)) && CAD.cmd) {
+    const num = parseFloat(str);
+    if (CAD.cmd === 'POLYGON' && CAD.step === 10) {
+      CAD.cmdData.sides = Math.max(3, parseInt(num, 10));
+      CAD.step = 1;
+      logCLI("Specify center point of polygon:");
+      return;
+    }
+    if (CAD.cmd === 'OFFSET' && CAD.step === 10) {
+      CAD.cmdData.dist = num;
+      CAD.step = 0;
+      logCLI("Select object to offset:");
+      return;
+    }
+  }
+
+  // Coordinate parser (@x,y or x,y or @dist<angle)
+  if (/^@?-?\d+(\.\d+)?(,-?\d+(\.\d+)?|<-?\d+(\.\d+)?)$/.test(str)) {
+    const isRel = str.startsWith('@');
+    if (isRel) str = str.substring(1);
+    const base = isRel && CAD.tempPoints.length ? CAD.tempPoints[CAD.tempPoints.length - 1] : { x: 0, y: 0 };
+    let pt = { x: 0, y: 0 };
+    if (str.includes('<')) {
+      const [d, a] = str.split('<').map(parseFloat);
+      const rad = a * Math.PI / 180;
+      pt = { x: base.x + d * Math.cos(rad), y: base.y + d * Math.sin(rad) };
+    } else {
+      const [x, y] = str.split(',').map(parseFloat);
+      pt = { x: base.x + x, y: base.y + y };
+    }
+    handlePointInput(pt);
+    return;
+  }
+
+  // Command aliases
+  const cmd = str.toUpperCase();
+  const aliases = {
+    'L': 'LINE', 'PL': 'PLINE', 'C': 'CIRCLE', 'A': 'ARC', 'REC': 'RECTANGLE',
+    'POL': 'POLYGON', 'EL': 'ELLIPSE', 'SPL': 'SPLINE', 'PO': 'POINT',
+    'M': 'MOVE', 'CO': 'COPY', 'CP': 'COPY', 'RO': 'ROTATE', 'SC': 'SCALE',
+    'MI': 'MIRROR', 'O': 'OFFSET', 'TR': 'TRIM', 'X': 'EXPLODE', 'E': 'ERASE',
+    'U': 'UNDO', 'Z': 'ZOOM', 'MASSPROP': 'MASSPROP'
+  };
+  startCommand(aliases[cmd] || cmd);
+}
+
+// --- Status Toggles ---
+function toggleSetting(name) {
+  CAD.settings[name] = !CAD.settings[name];
+  document.getElementById(`chip-${name}`).classList.toggle('active', CAD.settings[name]);
+  logCLI(`${name.toUpperCase()} ${CAD.settings[name] ? 'ON' : 'OFF'}`, 'log-info');
+  render();
+}
+
+// --- Properties & Layers Management ---
+function updateCurrentProperties() {
+  CAD.currentProps.color = document.getElementById('prop-color').value;
+  CAD.currentProps.linetype = document.getElementById('prop-linetype').value;
+  CAD.currentProps.lineweight = document.getElementById('prop-lineweight').value;
+
+  if (CAD.selection.length) {
+    recordUndo();
+    CAD.selection.forEach(e => {
+      e.color = CAD.currentProps.color;
+      e.linetype = CAD.currentProps.linetype;
+      e.lineweight = CAD.currentProps.lineweight;
+    });
+    render();
+    logCLI("Properties updated for selected objects.");
+  }
+}
+
+function updateLayerUI() {
+  const sel = document.getElementById('layer-selector');
+  sel.innerHTML = '';
+  const tbody = document.querySelector('#layer-table tbody');
+  tbody.innerHTML = '';
+
+  for (const name in CAD.layers) {
+    const l = CAD.layers[name];
+    const opt = document.createElement('option');
+    opt.value = name; opt.text = name;
+    if (name === CAD.activeLayer) opt.selected = true;
+    sel.appendChild(opt);
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${name}</td>
+      <td><input type="color" value="${l.color}" onchange="setLayerColor('${name}', this.value)"></td>
+      <td><input type="checkbox" ${l.visible ? 'checked' : ''} onchange="setLayerVis('${name}', this.checked)"></td>
+    `;
+    tbody.appendChild(tr);
+  }
+}
+
+function changeActiveLayer(val) { CAD.activeLayer = val; logCLI(`Layer switched to: ${val}`); }
+function toggleLayersDialog() {
+  const d = document.getElementById('layer-dlg');
+  d.style.display = d.style.display === 'block' ? 'none' : 'block';
+  updateLayerUI();
+}
+function addLayerPrompt() {
+  const n = prompt("Layer name:");
+  if (n && !CAD.layers[n]) {
+    CAD.layers[n] = { name: n, color: '#00d2ff', visible: true };
+    updateLayerUI();
+  }
+}
+function setLayerColor(name, c) { if (CAD.layers[name]) { CAD.layers[name].color = c; render(); } }
+function setLayerVis(name, v) { if (CAD.layers[name]) { CAD.layers[name].visible = v; render(); } }
+function newFile() {
+  if (confirm("Clear current drawing session?")) {
+    CAD.entities = []; CAD.selection = []; CAD.undoStack = []; CAD.redoStack = [];
+    CAD.pan = { x: 0, y: 0 }; CAD.zoom = 1.0;
+    render(); logCLI("New drawing initialized.", 'log-info');
+  }
+}
+
+// Startup
+window.onload = () => {
+  resizeCanvas();
+  updateLayerUI();
+  zoomExtents();
+};
+</script>
+</body>
+</html>
