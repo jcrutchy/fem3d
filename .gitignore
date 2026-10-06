@@ -1,6 +1,6 @@
-#*.log
+*.log
 *.jsonl
-#*.exe
+*.exe
 *.compiled
 *.ppu
 *.o
@@ -11,4 +11,4 @@
 backup/
 *.lps
 src/lib/
-#bin/
+bin/

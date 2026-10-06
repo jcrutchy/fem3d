@@ -28,6 +28,12 @@ this codebase, not a simplified stand-in.
    for hand calculation needs a genuinely independent second method, not
    just a bigger version of the same check.
 
+4. **[Natural frequencies of a two-mass chain](04_modal_two_mass_chain.md)**
+   — the first *dynamic* tutorial. Lumped mass, the generalized
+   eigenproblem `K phi = omega^2 M phi`, mass-normalized mode shapes, and
+   the mode mass-orthonormality self-check, all hand-derived for a 2-dof
+   chain and compared digit-for-digit with `modal`'s output.
+
 ## Still to come
 
 - A flat plate/shell tutorial (`shellq4`, then `shellq8`), building on
@@ -36,9 +42,6 @@ this codebase, not a simplified stand-in.
   `017_shellq8_membrane_patch` — same worked-example treatment as above,
   covering membrane action, the drilling-dof stopgap, and (for
   `shellq8`) the thick-vs-thin shear-deformable formulation.
-- A `modal` tutorial — natural frequency of a simple lumped-mass system,
-  hand-checked against `omega = sqrt(k/m)`, and reading the mode
-  mass-orthonormality self-check.
 - A `linsparse` tutorial — the same model as one of the direct-solver
   tutorials above, re-run through the iterative PCG solver, comparing
   its convergence reporting against `linstatic`'s exact factorization.

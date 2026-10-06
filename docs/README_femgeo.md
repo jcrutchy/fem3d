@@ -19,8 +19,8 @@ src/tools/femgeocheck/                   CLI checker
 src/tools/patch_test/run_roundtrip_test.lpr, run_geometry_fixtures.lpr
                                          round-trip + fixture regression tests
 src/adaptors/dxf2femgeo/                 DXF -> FEM3DGEO (LINE, CIRCLE, ARC)
-src/adaptors/iges2femgeo/, step2femgeo/  NOT yet rebuilt: the .lpr files there are
-                                         the old code and do not compile
+(IGES / STEP adaptors)                   not yet written -- the old broken sources were
+                                         removed; see docs/TODO_femgeo.md
 tests/geometry/                          good/ and borked/ .fgeo fixtures
 examples/rivet_flange_geometry/          a worked DXF -> FEM3DGEO example
 ```

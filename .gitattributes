@@ -1,0 +1,11 @@
+# Windows batch files must stay CRLF, shell scripts LF.
+*.bat text eol=crlf
+*.sh  text eol=lf
+
+# Regression inputs/outputs are hashed by manifest.ini: never let git rewrite their bytes.
+tests/regression/** -text
+tests/liberty/**    -text
+db/*.json           -text
+
+*.exe binary
+*.png binary

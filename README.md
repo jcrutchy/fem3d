@@ -170,8 +170,8 @@ everything, and `run.bat` does both.
 ```
 src/common/      shared units (model, solvers' maths, section, geometry, crack growth)
 src/solvers/     linstatic, linsparse, modal
-src/adaptors/    adapt_json, femresolve, dxf2femgeo (iges2femgeo / step2femgeo: not rebuilt)
-src/tools/       fem_regress, femsection, femgeocheck, test programs
+src/adaptors/    adapt_json, femresolve, dxf2femgeo (IGES/STEP adaptors: not yet written)
+src/tools/       fem_regress, femsection, femgeocheck, femrun (web gateway), test programs
 db/              section catalogues (liberty_db.json)
 docs/            all documentation (formats, tools, tutorials, TODOs)
 examples/        example inputs (section .fgeo files, rivet-flange DXF/FGEO)
@@ -203,7 +203,8 @@ FEM_THREADS=8 ./bin/linsparse some_large_model.fem   # see docs/linsparse.md bef
 ## Tutorials
 
 `docs/tutorials/` — a graduated series of worked examples (single truss
-bar → cantilever beam → portal frame, more to come), aimed at someone
+bar → cantilever beam → portal frame → natural frequencies of a
+two-mass chain, more to come), aimed at someone
 learning FEA itself, not just this package: theory, an annotated model
 file, and the solver's actual verbose output read line by line against
 a hand calculation (or, once hand calculation stops being possible, an
@@ -354,6 +355,9 @@ independently cross-checked one). Every tutorial's model is a real
       viewer refuses results that are not for the model it was given. See
       `viewer/README.md`. A Lazarus version is still open; the format the
       viewer reads is the same `DISP/REACT/ELEM` key=value output.
+- [ ] Geometry/CAD web app (vanilla JS, headless core, CLI-backed through a
+      vdrx route; eventually replaces `cad/cad.htm`): proposal and
+      milestones in `docs/cad_architecture.md`
 - [ ] Viewer: solve from the browser through a vdrx route; JSON models and
       modal results; depth-correct ordering of intersecting shells
 - [ ] Shell stress averaging across elements (nodal smoothing) and

@@ -1,0 +1,39 @@
+; femrun.ini -- the whitelist and security settings for femrun (docs/femrun.md).
+; Copy to femrun.ini next to femrun.exe (or pass its path as femrun's first argument).
+; Relative paths resolve against the folder containing this file.
+
+[FEMRUN]
+; The Host header must be one of these (defeats DNS-rebinding). List every
+; host:port the page is served from. Fails closed: empty means "reject all".
+AllowedHosts=127.0.0.1:9080,localhost:9080
+; An Origin header, if present, must be one of these. POST also needs one of
+; these Origins (or the token below).
+AllowedOrigins=http://127.0.0.1:9080,http://localhost:9080
+; Optional. If set, every POST must carry header  X-Femrun-Token: <this value>
+; (and an allowed Origin alone is no longer enough).
+;Token=change-me
+; Optional. Base folder for relative Exe/Cwd paths (default: this file's folder).
+;BaseDir=..
+
+; One section per runnable tool. The browser only ever supplies the NAME.
+[TOOL femgeocheck]
+Exe=bin/femgeocheck.exe
+; Flags the client may request via ?a=<flag> (exact, case-sensitive match).
+Args=
+; Always appended after the client's flags ("-" = read the model from stdin).
+Fixed=-
+TimeoutMs=10000
+MaxInputBytes=8000000
+MaxOutputBytes=16000000
+;Cwd=
+
+[TOOL dxf2femgeo]
+Exe=bin/dxf2femgeo.exe
+Fixed=-
+TimeoutMs=20000
+
+[TOOL linstatic]
+Exe=bin/linstatic.exe
+Fixed=-
+TimeoutMs=120000
+MaxInputBytes=64000000
