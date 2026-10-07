@@ -34,6 +34,24 @@ if exist bin\run_geometry_fixtures.exe (
 
 echo.
 echo ==========================================
+echo GUI smoke test  (a window opens briefly)
+echo ==========================================
+if exist bin\femsecedit.exe (
+    if exist "%TEMP%\femsecedit_smoke.png" del "%TEMP%\femsecedit_smoke.png"
+    bin\femsecedit.exe examples\prop\200ub25_4.fgeo --screenshot "%TEMP%\femsecedit_smoke.png" --size 1100x700
+    if exist "%TEMP%\femsecedit_smoke.png" (
+        echo PASS  femsecedit loaded a section and drew its window to a PNG
+        del "%TEMP%\femsecedit_smoke.png"
+    ) else (
+        echo [FAIL] femsecedit did not produce a screenshot
+        set FAILED=1
+    )
+) else (
+    echo [SKIP] bin\femsecedit.exe is not built
+)
+
+echo.
+echo ==========================================
 echo Running regression suite  (tests\regression)
 echo ==========================================
 if exist bin\fem_regress.exe (

@@ -1,12 +1,13 @@
-# FEM3D geometry app ("cad") — architecture and plan
+# FEM3D geometry app ("cad") — web architecture (SUPERSEDED)
 
-Status: **proposal.** The tool gateway (`femrun`, section 4) is built and
-tested; the app itself is not started. This document is the design to argue
-with before app code is written. Section 12 lists the decisions still open.
-
-Decided so far: plain namespaced scripts (no ES modules); **no Node.js**
-anywhere in the CAD app's build or tests; vdrx as the local server with a
-whitelisting runner (`femrun`) as the bridge to the CLI tools.
+> **Superseded by `docs/gui_architecture.md`.** The graphical front ends are
+> now native Lazarus modules; the web part is limited to the existing results
+> viewer. This document is kept because several parts still apply: the
+> geometry scope (section 8), the command/undo design (sections 6-7), the
+> reserved constraint hooks (section 9), the UX notes (section 10) and the
+> `femrun` gateway (section 4, `docs/femrun.md`), which remains available as an
+> optional way for a web page to run the CLI tools. Sections about the web
+> build, testing and milestones are no longer the plan.
 
 ## 1. Purpose and non-goals
 

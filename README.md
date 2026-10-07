@@ -171,7 +171,8 @@ everything, and `run.bat` does both.
 src/common/      shared units (model, solvers' maths, section, geometry, crack growth)
 src/solvers/     linstatic, linsparse, modal
 src/adaptors/    adapt_json, femresolve, dxf2femgeo (IGES/STEP adaptors: not yet written)
-src/tools/       fem_regress, femsection, femgeocheck, femrun (web gateway), test programs
+src/tools/       fem_regress, femsection, femgeocheck, femrun (optional web gateway), test programs
+src/gui/         native Lazarus GUI modules, one folder + .lpi each (femsecedit)
 db/              section catalogues (liberty_db.json)
 docs/            all documentation (formats, tools, tutorials, TODOs)
 examples/        example inputs (section .fgeo files, rivet-flange DXF/FGEO)
@@ -355,9 +356,13 @@ independently cross-checked one). Every tutorial's model is a real
       viewer refuses results that are not for the model it was given. See
       `viewer/README.md`. A Lazarus version is still open; the format the
       viewer reads is the same `DISP/REACT/ELEM` key=value output.
-- [ ] Geometry/CAD web app (vanilla JS, headless core, CLI-backed through a
-      vdrx route; eventually replaces `cad/cad.htm`): proposal and
-      milestones in `docs/cad_architecture.md`
+- [x] Native GUI modules (Lazarus), replacing the earlier web-first plan:
+      first module `femsecedit` -- loads a `.fgeo` section, draws it, shows
+      every section property live (same code as `femsection`), diagnostics,
+      auto-reload on file change, `.prop` export. Plan and conventions in
+      `docs/gui_architecture.md`, usage in `docs/femsecedit.md`.
+- [ ] `femsecedit` editing tools (draw/edit, snaps, undo/redo, presets), then
+      `femgeoedit` (geometry) and `femsetup` (loads/constraints)
 - [ ] Viewer: solve from the browser through a vdrx route; JSON models and
       modal results; depth-correct ordering of intersecting shells
 - [ ] Shell stress averaging across elements (nodal smoothing) and

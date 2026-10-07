@@ -45,12 +45,13 @@ What `femrun` enforces itself, on every request:
   `X-Femrun-Token` with that exact value.
 - **Limits.** Per tool: input size, output size (excess is dropped and
   reported as `"truncated": true`), and wall-clock time (the process is
-  killed). The tool's stdin is fed from a separate thread while stdout and
-  stderr are drained concurrently, so neither a chatty tool nor a tool that
-  writes before it reads (or exits without reading) can deadlock the pipes.
-  (A first version fed stdin from the same thread and froze on Windows,
-  whose pipe buffers are small; `run_femrun_test` now reproduces that case
-  on any OS.)
+  killed). The tool's stdin is fed from one thread while stdout and stderr
+  are each drained by their own thread using blocking reads, so neither a
+  chatty tool nor a tool that writes before it reads (or exits without
+  reading) can deadlock the pipes, and throughput is not limited by polling
+  (Windows' timer tick is ~15 ms and its pipe buffers are only a few KB; a
+  first version that polled froze, then crawled, on a 2 MB round trip).
+  `run_femrun_test` reproduces those cases on any OS.
 
 What `femrun` **cannot** enforce, and what you need to know:
 

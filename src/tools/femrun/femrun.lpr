@@ -60,6 +60,22 @@ type
     constructor Create(AProc: TProcess; const AData: string);
   end;
 
+  // Reads one of the tool's output pipes with blocking reads on its own
+  // thread (polling with Sleep() is far too slow on Windows, whose timer tick
+  // is ~15 ms and whose pipe buffers are only a few KB). Keeps at most FCap
+  // bytes; the rest is still read, so the tool never blocks on a full pipe.
+  TReader = class(TThread)
+  private
+    FStream: TStream;
+    FCap: Int64;
+  protected
+    procedure Execute; override;
+  public
+    Data: string;
+    Truncated: Boolean;
+    constructor Create(AStream: TStream; ACap: Int64);
+  end;
+
 var
   Cfg: TMemIniFile;
   BaseDir: string;
@@ -95,6 +111,49 @@ begin
     FProc.CloseInput;
   except
   end;
+end;
+
+constructor TReader.Create(AStream: TStream; ACap: Int64);
+begin
+  FStream := AStream;
+  FCap := ACap;
+  Data := '';
+  Truncated := False;
+  FreeOnTerminate := False;
+  inherited Create(False);
+end;
+
+procedure TReader.Execute;
+var
+  Tmp: array[0..16383] of Byte;
+  N: Integer;
+  Take, Len: Int64;
+begin
+  Len := 0;
+  try
+    while True do
+    begin
+      N := FStream.Read(Tmp[0], SizeOf(Tmp));
+      if N <= 0 then Break;
+      Take := N;
+      if Len + Take > FCap then
+      begin
+        Truncated := True;
+        Take := FCap - Len;
+        if Take < 0 then Take := 0;
+      end;
+      if Take > 0 then
+      begin
+        if Len + Take > Length(Data) then
+          SetLength(Data, (Len + Take) * 2 + 4096);
+        Move(Tmp[0], Data[Len + 1], Take);
+        Inc(Len, Take);
+      end;
+    end;
+  except
+    // pipe closed under us (tool killed): keep what we have
+  end;
+  SetLength(Data, Len);
 end;
 
 // ------------------------------------------------------------ JSON output
@@ -332,42 +391,11 @@ var
   i, p: Integer;
   Pair, Key, Val: string;
   OutBuf, ErrBuf: string;
-  OutTrunc, ErrTrunc, TimedOut, DidWork: Boolean;
+  OutTrunc, ErrTrunc, TimedOut: Boolean;
   Feeder: TFeeder;
-  Start: QWord;
-  Got: Integer;
-  Buf: array[0..8191] of Byte;
+  OutReader, ErrReader: TReader;
+  Start, GraceStart: QWord;
   ExitCode: Integer;
-
-  procedure Drain(Stream: TStream; var Dest: string; var Trunc: Boolean);
-  var
-    Avail: Integer;
-  begin
-    while True do
-    begin
-      if Stream is TInputPipeStream then
-        Avail := TInputPipeStream(Stream).NumBytesAvailable
-      else
-        Avail := 0;
-      if Avail <= 0 then Break;
-      if Avail > SizeOf(Buf) then Avail := SizeOf(Buf);
-      Got := Stream.Read(Buf[0], Avail);
-      if Got <= 0 then Break;
-      DidWork := True;
-      if Length(Dest) + Got > T.MaxOutput then
-      begin
-        Trunc := True;
-        Got := T.MaxOutput - Length(Dest);
-        if Got < 0 then Got := 0;
-      end;
-      if Got > 0 then
-      begin
-        SetLength(Dest, Length(Dest) + Got);
-        Move(Buf[0], Dest[Length(Dest) - Got + 1], Got);
-      end;
-    end;
-  end;
-
 begin
   if Int64(Length(Body)) > T.MaxInput then Fail(413, 'Input too large for this tool');
   if not FileExists(T.Exe) then Fail(500, 'Tool executable not found on this machine');
@@ -405,8 +433,7 @@ begin
       Proc.Options := [poUsePipes, poNoConsole];
       Proc.ShowWindow := swoHide;
 
-      OutBuf := ''; ErrBuf := '';
-      OutTrunc := False; ErrTrunc := False; TimedOut := False;
+      TimedOut := False;
       Feeder := nil;
       Start := GetTickCount64;
       try
@@ -415,6 +442,11 @@ begin
         on E: Exception do Fail(500, 'Could not start tool: ' + E.Message);
       end;
 
+      // One thread per pipe, each doing blocking I/O: stdin is fed, stdout and
+      // stderr are drained, all at once, so no pipe can fill up and stall the
+      // tool (or us).
+      OutReader := TReader.Create(Proc.Output, T.MaxOutput);
+      ErrReader := TReader.Create(Proc.Stderr, T.MaxOutput);
       if Length(Body) = 0 then
       begin
         try Proc.CloseInput; except end;
@@ -422,37 +454,39 @@ begin
       else
         Feeder := TFeeder.Create(Proc, Body);
 
-      try
-        while True do
+      // wait for the tool to finish (or the time limit)
+      while Proc.Running do
+      begin
+        if Int64(GetTickCount64 - Start) > T.TimeoutMs then
         begin
-          DidWork := False;
-          Drain(Proc.Output, OutBuf, OutTrunc);
-          Drain(Proc.Stderr, ErrBuf, ErrTrunc);
-          if not Proc.Running then
-          begin
-            Drain(Proc.Output, OutBuf, OutTrunc);
-            Drain(Proc.Stderr, ErrBuf, ErrTrunc);
-            Break;
-          end;
-          if Int64(GetTickCount64 - Start) > T.TimeoutMs then
-          begin
-            TimedOut := True;
-            Proc.Terminate(1);
-            Break;
-          end;
-          if not DidWork then Sleep(2);
+          TimedOut := True;
+          Proc.Terminate(1);
+          Break;
         end;
-      finally
-        if Feeder <> nil then
-        begin
-          // the tool is gone (or killed), so a blocked write fails promptly
-          Feeder.Terminate;
+        Sleep(2);
+      end;
+
+      // The tool is gone: its pipes close, the readers reach end-of-file and a
+      // blocked stdin write fails. Give them a moment; a grandchild that kept
+      // a pipe open must not be able to hold us here forever.
+      GraceStart := GetTickCount64;
+      while not (OutReader.Finished and ErrReader.Finished) and
+            (Int64(GetTickCount64 - GraceStart) < 3000) do
+        Sleep(2);
+      if Feeder <> nil then
+      begin
+        Feeder.Terminate;
+        if Feeder.Finished or (Int64(GetTickCount64 - GraceStart) < 3000) then
           Feeder.WaitFor;
-          Feeder.Free;
-        end;
       end;
       try Proc.WaitOnExit; except end;
       ExitCode := Proc.ExitCode;   // decoded exit code (ExitStatus is the raw wait status on Unix)
+
+      OutBuf := OutReader.Data;   OutTrunc := OutReader.Truncated;
+      ErrBuf := ErrReader.Data;   ErrTrunc := ErrReader.Truncated;
+      if OutReader.Finished then OutReader.Free;
+      if ErrReader.Finished then ErrReader.Free;
+      if (Feeder <> nil) and Feeder.Finished then Feeder.Free;
     finally
       Proc.Free;
     end;

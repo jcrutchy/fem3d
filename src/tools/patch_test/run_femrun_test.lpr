@@ -15,6 +15,9 @@ program run_femrun_test;
 // --noisy | --exit3 | --stderr.
 
 uses
+{$IFDEF UNIX}
+  cthreads,
+{$ENDIF}
   SysUtils, Classes, Process, fpjson, jsonparser;
 
 var
@@ -150,55 +153,90 @@ begin
   end;
 end;
 
-// Runs femrun with the given config and request line; returns its raw stdout.
-// If femrun does not finish within DeadlineMs it is killed and '' is returned,
-// so a deadlock in femrun shows up as a FAIL instead of freezing the test run.
-function CallFemrun(const Cfg, ReqLine: string; DeadlineMs: Integer = 30000): string;
+type
+  // Kills femrun if it has not finished by the deadline, so a hang in femrun
+  // shows up as a FAIL instead of freezing the whole test run.
+  TKiller = class(TThread)
+  private
+    FProc: TProcess;
+    FDeadlineMs: Integer;
+  protected
+    procedure Execute; override;
+  public
+    Fired: Boolean;
+    constructor Create(AProc: TProcess; ADeadlineMs: Integer);
+  end;
+
+constructor TKiller.Create(AProc: TProcess; ADeadlineMs: Integer);
+begin
+  FProc := AProc;
+  FDeadlineMs := ADeadlineMs;
+  Fired := False;
+  FreeOnTerminate := False;
+  inherited Create(False);
+end;
+
+procedure TKiller.Execute;
+var
+  T0: QWord;
+begin
+  T0 := GetTickCount64;
+  while not Terminated do
+  begin
+    if Int64(GetTickCount64 - T0) > FDeadlineMs then
+    begin
+      Fired := True;
+      try FProc.Terminate(1); except end;
+      Exit;
+    end;
+    Sleep(25);
+  end;
+end;
+
+// Runs femrun with the given config and request line; returns its raw stdout
+// ('' if femrun had to be killed for exceeding DeadlineMs).
+function CallFemrun(const Cfg, ReqLine: string; DeadlineMs: Integer = 60000): string;
 var
   Proc: TProcess;
   Buf: array[0..65535] of Byte;
-  n, Avail: Integer;
+  n: Integer;
   Line: string;
-  Start: QWord;
-  Done: Boolean;
+  Killer: TKiller;
+  Len: Int64;
 begin
   Result := '';
+  Len := 0;
   Proc := TProcess.Create(nil);
   try
     Proc.Executable := FemrunExe;
     Proc.Parameters.Add(Cfg);
     Proc.Options := [poUsePipes, poNoConsole];
     Proc.Execute;
-    Line := ReqLine + #10;
-    Proc.Input.WriteBuffer(Line[1], Length(Line));
-    Proc.CloseInput;
-    Start := GetTickCount64;
-    Done := False;
-    while not Done do
-    begin
-      Avail := Proc.Output.NumBytesAvailable;
-      if Avail > 0 then
-      begin
-        if Avail > SizeOf(Buf) then Avail := SizeOf(Buf);
-        n := Proc.Output.Read(Buf[0], Avail);
-        if n > 0 then
-        begin
-          SetLength(Result, Length(Result) + n);
-          Move(Buf[0], Result[Length(Result) - n + 1], n);
-        end;
-      end
-      else if not Proc.Running then
-      begin
-        if Proc.Output.NumBytesAvailable = 0 then Done := True;
-      end
-      else if Int64(GetTickCount64 - Start) > DeadlineMs then
-      begin
-        Proc.Terminate(1);
-        Result := '';
-        Done := True;
-      end
-      else
-        Sleep(2);
+    Killer := TKiller.Create(Proc, DeadlineMs);
+    try
+      try
+        Line := ReqLine + #10;
+        Proc.Input.WriteBuffer(Line[1], Length(Line));
+        Proc.CloseInput;
+        // blocking reads: full pipe speed, no polling
+        repeat
+          n := Proc.Output.Read(Buf[0], SizeOf(Buf));
+          if n > 0 then
+          begin
+            if Len + n > Length(Result) then SetLength(Result, (Len + n) * 2 + 4096);
+            Move(Buf[0], Result[Len + 1], n);
+            Inc(Len, n);
+          end;
+        until n <= 0;
+      except
+        // femrun killed while we were writing to it
+      end;
+      SetLength(Result, Len);
+      Killer.Terminate;
+      Killer.WaitFor;
+      if Killer.Fired then Result := '';
+    finally
+      Killer.Free;
     end;
     try Proc.WaitOnExit; except end;
   finally
@@ -407,9 +445,9 @@ begin
     (Trim(Inner.Get('stderr', '')) = 'oops'));
 
   // large stdin through the tool and back: must not deadlock, must be exact
-  SetLength(Big, 0);
-  S := 'abcdefghij"\ line' + #10;
-  for i := 1 to 120000 do Big := Big + S;
+  S := 'abcdefghij"\\ line' + #10;
+  SetLength(Big, 120000 * Length(S));
+  for i := 0 to 119999 do Move(S[1], Big[i * Length(S) + 1], Length(S));
   St := Call(ConfigPath, 'POST', '/run/echo', 'a=--echo', GoodHost, GoodOrigin, '', Big, Inner);
   Check('2 MB round trip through a tool is exact',
     (St = 200) and (Inner <> nil) and (Inner.Get('stdout', '') = Big),
