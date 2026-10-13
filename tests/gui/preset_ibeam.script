@@ -1,0 +1,7 @@
+# The I-section preset reproduces the catalogue 200 UB 25.4 (area 3230.9 mm^2).
+new mm
+preset ibeam 203.2 133 7.8 5.8 8.9
+expect profiles 1
+expect area 3230.9 0.001
+save $OUT
+export $OUT_PROP

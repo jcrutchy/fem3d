@@ -1,0 +1,3 @@
+# A mistake in a script must fail loudly (exit code 3), never pass silently.
+new mm
+frobnicate 1 2 3

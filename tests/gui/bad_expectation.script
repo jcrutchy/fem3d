@@ -1,0 +1,5 @@
+new mm
+tool rect
+click 0 0
+click 10 10
+expect area 999

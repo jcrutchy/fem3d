@@ -1,6 +1,6 @@
 # FEM3D native GUI modules — architecture and plan
 
-Status: **first module built** (`femsecedit`, slice 1). This replaces the
+Status: **first module built** (`femsecedit`: viewer, live properties, drawing tools, presets, undo/redo, save). This replaces the
 web-first plan in `docs/cad_architecture.md`, which is kept only for the
 material that still applies (geometry scope, command/undo design, `femrun`).
 
@@ -51,12 +51,19 @@ page to trigger a solve; nothing in the native modules depends on it.
 src/common/          shared units, no LCL
   fem_viewport2d.pas   world<->screen transform, pan, zoom-at-cursor, fit, grid step
   fem_proprows.pas     section properties -> display rows (checked against the .prop file)
-  fem_sectiondoc.pas   one .fgeo loaded + validated + analysed, as femsection does
+  fem_sectiondoc.pas   one .fgeo (or an in-memory model) validated + analysed, as femsection does
+  fem_sketch.pas       editable section sketch (lines, arcs, circles; solid/hole), edits,
+                       undo/redo history, conversion to/from the FEM3DGEO model
+  fem_snap2d.pas       snapping (vertex, centre, quadrant, midpoint, grid) and ortho
+  fem_sectionpresets.pas  parametric shapes (rect, CHS, RHS, I/H, channel, angle, tee)
 src/gui/<module>/    one folder per GUI module
   <module>.lpr / .lpi        program + Lazarus project (open this in Lazarus)
   <module>_main.pas / .lfm   main form (layout editable in the designer)
   <module>_view.pas          custom drawing control(s)
-src/tools/patch_test/run_guicore_test.lpr   headless tests of the shared GUI units
+src/tools/patch_test/run_guicore_test.lpr    headless tests: view maths, property rows, section doc, no-LCL rule
+src/tools/patch_test/run_sketch_test.lpr     headless tests: sketch model, snapping, presets
+src/tools/patch_test/run_gui_script_test.lpr end-to-end: drives femsecedit with tests/gui/*.script
+tests/gui/*.script                           scripted editing sessions with built-in assertions
 ```
 
 `build.bat` builds every `.lpi` (so the GUI modules go to `bin\` with the CLI
@@ -97,32 +104,35 @@ tools); `test.bat` runs the GUI core tests and a GUI smoke test.
 
 ### 5.1 femsecedit
 
-Slice 1 (built): open a `.fgeo` (File > Open or on the command line); the
-section is drawn with grid, axes, centroid and principal axes (wheel zooms
-about the cursor, drag pans, F fits, G toggles the grid); a property table
-shows all properties in groups (geometry, second moments, radii of gyration,
-moduli, torsion, beam-property values), with the numerical torsion constant
-J filled in a moment after the rest; geometry diagnostics (GEO codes) are
-listed underneath; **File > Export .prop** writes exactly what `femsection`
-would. **Auto-reload** (View menu, on by default) re-reads the file when it
-changes on disk, so a section saved from the web section editor, a text
-editor or another tool updates the properties immediately. Ctrl+C copies the
-selected property row.
+Built (see `docs/femsecedit.md` for usage): open or draw a section, with
+rectangle, polygon and circle tools, selection with move and corner-drag,
+snapping, orthogonal mode, automatic hole detection, parametric shapes, undo and
+redo, save as `.fgeo`, export `.prop`, auto-reload of the open file, live
+properties and diagnostics, and a script mode for automated tests.
 
-Slice 2 (next): drawing and editing tools (line, rectangle, circle, arc,
-polygon, move/copy/delete), snaps, undo/redo, section presets with
-parameters, writing `.fgeo` through the canonical writer. Design:
+Design decisions worth knowing:
 
-- an editable document model over `TFEMGeometryModel` in a common unit, with
-  every edit a command object (do/undo), so undo/redo, a history list and a
-  replayable log come for free and are unit-tested without a GUI;
-- snapping and hit-testing in a common unit built on `fem_viewport2d`;
-- live properties already work through `fem_sectiondoc`; the quick pass runs
-  on every edit and the torsion solve is debounced (it moves to a worker
-  thread if it ever feels slow on large sections).
+- **The sketch is the editable model, the FEM3DGEO model is derived from it.**
+  `fem_sketch` holds closed profiles (a chain of line/three-point-arc segments,
+  or a circle) flagged solid or hole. Each edit rebuilds the FEM3DGEO model
+  (`SketchToGeo`), which then goes through the same validator, section builder
+  and calculator as the CLI. A hole is assigned to the smallest solid containing
+  it when the model is built, so the user never manages faces and loops.
+- **Undo is snapshot-based**, not per-command do/undo objects: sketches are
+  tiny, a deep copy per edit is cheap, and it removes a whole class of
+  undo-inverse bugs. (`SketchCopy` is deliberate: dynamic arrays inside records
+  are shared by plain assignment.) A drag is one history step.
+- **Model coordinates are rounded to the 15 digits the file stores**
+  (`Canon`), so the in-memory model is bit-identical to the same model saved
+  and reloaded, and the editor and the CLI tessellate arcs identically.
+- **Tools are driven through public methods** (`ClickAt`, `MoveCursorTo`,
+  `ScriptDrag`...), which the mouse handlers call, so the scripts exercise the
+  real code.
+- The preset dialog is built in code because its fields depend on the shape.
 
-Slice 3: compare against the Liberty catalogue (pick a designation, overlay,
-show differences), batch/export helpers.
+Next: numeric entry for selected shapes (radius, corner coordinates), more
+snaps (intersections, perpendicular), copy/mirror/array, arc segments drawn by
+hand, and comparison against the Liberty catalogue.
 
 ### 5.2 femgeoedit, femsetup
 
@@ -135,14 +145,24 @@ solve through the existing CLI chain.
 
 ## 6. Testing
 
-1. `run_guicore_test` (headless, Pascal): viewport maths, value formatting,
-   the property rows against what `femsection` writes to a `.prop` (every key
-   and value), the section document (load, quick/full pass, errors,
-   diagnostics), and the no-LCL-in-common rule.
-2. `femsecedit --screenshot` smoke test in `test.bat`: loads an example,
-   draws the real window and checks a PNG was produced. This catches `.lfm`
-   or form-wiring mistakes that a compile alone would not.
-3. Visual checks: take `--screenshot` images when changing a layout.
+1. `run_guicore_test` (headless): viewport maths, value formatting, the property
+   rows against what `femsection` writes to a `.prop`, the section document,
+   and the no-LCL-in-common rule.
+2. `run_sketch_test` (headless, 148 checks): sketch to model conversion checked
+   against closed-form properties; import/export round trips of the real
+   example files (arcs included); undo/redo isolation; snapping; every preset
+   against its closed-form area, inertia and centroid; refusal of impossible
+   dimensions; and that the editor's model tessellates identically to the saved
+   and reloaded one.
+3. `run_gui_script_test` (end to end): runs `femsecedit` on each
+   `tests/gui/*.script`. Scripts drive tools, snapping, undo, redo and mouse
+   drags and carry their own `expect` assertions; the test then checks the saved
+   files with `femgeocheck` and `femsection`, that the exported `.prop` equals
+   `femsection`'s area, and that deliberately faulty scripts fail with exit code 3.
+   It briefly opens windows. On Linux it needs `DISPLAY` and, on a headless
+   machine, a window manager as well (Xvfb alone makes GTK2 spin its layout
+   loop; Xvfb + openbox works). Without `DISPLAY` it reports SKIPPED.
+4. Visual checks: `--screenshot` images when changing a layout.
 
 ## 7. Build and run
 
@@ -157,5 +177,9 @@ affecting Windows builds.
 
 1. Application manifest/theming for the Windows builds (section 4).
 2. Whether `femsetup` and `femgeoedit` are one program or two.
-3. Torsion-solve threading in `femsecedit` once editing makes it run often.
+3. Torsion-solve threading in `femsecedit` for very large sections (it is
+   debounced on the main thread today and has been instant on every section tried).
 4. Whether to drop `.exe` from the CLI projects' target names for Linux.
+5. Whether the section builder's arc subdivision should be made robust at exact
+   multiples of its step (`Ceil(sweep/step)` flips by one piece; effect ~1e-8,
+   but changing it would alter committed regression numbers).

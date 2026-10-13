@@ -1,0 +1,25 @@
+# Mouse editing: select a rectangle, drag it, drag one of its corner handles,
+# and check that every drag is a single undo step.
+new mm
+snap none
+tool rect
+click 0 0
+click 100 50
+expect area 5000
+tool select
+select 1
+# moving does not change the section
+drag 50 25 150 125
+expect area 5000 1e-9
+undo
+expect area 5000 1e-9
+redo
+# pulling the top-right corner out to (200, 125) makes a trapezoid-ish quad:
+# the corner starts at (200,150) after the move above
+drag 200 150 300 150
+expect profiles 1
+undo
+expect dirty yes
+undo
+undo
+expect profiles 0

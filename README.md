@@ -357,12 +357,16 @@ independently cross-checked one). Every tutorial's model is a real
       `viewer/README.md`. A Lazarus version is still open; the format the
       viewer reads is the same `DISP/REACT/ELEM` key=value output.
 - [x] Native GUI modules (Lazarus), replacing the earlier web-first plan:
-      first module `femsecedit` -- loads a `.fgeo` section, draws it, shows
-      every section property live (same code as `femsection`), diagnostics,
-      auto-reload on file change, `.prop` export. Plan and conventions in
-      `docs/gui_architecture.md`, usage in `docs/femsecedit.md`.
-- [ ] `femsecedit` editing tools (draw/edit, snaps, undo/redo, presets), then
-      `femgeoedit` (geometry) and `femsetup` (loads/constraints)
+      `femsecedit`, a section editor and analyser -- draw (rectangle, polygon,
+      circle), select/move/drag corners, snapping, automatic holes, parametric
+      shapes (RHS, CHS, I/H, channel, angle, tee), undo/redo, save `.fgeo`,
+      export `.prop`, every property live (same code as `femsection`),
+      diagnostics, auto-reload, and a script mode used by end-to-end tests.
+      Plan and conventions in `docs/gui_architecture.md`, usage in
+      `docs/femsecedit.md`.
+- [ ] `femsecedit`: numeric entry for shapes, more snaps, copy/mirror/array,
+      hand-drawn arcs, catalogue comparison; then `femgeoedit` (geometry) and
+      `femsetup` (loads/constraints)
 - [ ] Viewer: solve from the browser through a vdrx route; JSON models and
       modal results; depth-correct ordering of intersecting shells
 - [ ] Shell stress averaging across elements (nodal smoothing) and

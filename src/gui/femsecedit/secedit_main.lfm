@@ -1,26 +1,134 @@
 object SecEditForm: TSecEditForm
   Left = 120
-  Height = 640
+  Height = 700
   Top = 80
-  Width = 1100
+  Width = 1180
   Caption = 'FEM3D Section Editor'
-  ClientHeight = 640
-  ClientWidth = 1100
+  ClientHeight = 700
+  ClientWidth = 1180
+  KeyPreview = True
   Menu = MainMenu1
+  OnCloseQuery = FormCloseQuery
   OnCreate = FormCreate
   OnDestroy = FormDestroy
+  OnKeyDown = FormKeyDown
   Position = poScreenCenter
   ShowHint = True
-  object PanelRight: TPanel
-    Left = 660
-    Height = 576
+  object ToolBar1: TToolBar
+    Left = 0
+    Height = 30
     Top = 0
+    Width = 1180
+    AutoSize = True
+    ButtonHeight = 28
+    ButtonWidth = 58
+    EdgeBorders = [ebBottom]
+    ShowCaptions = True
+    TabOrder = 0
+    object tbSelect: TToolButton
+      Left = 1
+      Top = 2
+      Caption = 'Select'
+      Down = True
+      Grouped = True
+      Hint = 'Select and move shapes (Esc)'
+      OnClick = tbToolClick
+      Style = tbsCheck
+    end
+    object tbRect: TToolButton
+      Tag = 1
+      Left = 59
+      Top = 2
+      Caption = 'Rectangle'
+      Grouped = True
+      Hint = 'Draw a rectangle (R)'
+      OnClick = tbToolClick
+      Style = tbsCheck
+    end
+    object tbPolygon: TToolButton
+      Tag = 2
+      Left = 117
+      Top = 2
+      Caption = 'Polygon'
+      Grouped = True
+      Hint = 'Draw a polygon (P)'
+      OnClick = tbToolClick
+      Style = tbsCheck
+    end
+    object tbCircle: TToolButton
+      Tag = 3
+      Left = 175
+      Top = 2
+      Caption = 'Circle'
+      Grouped = True
+      Hint = 'Draw a circle (C)'
+      OnClick = tbToolClick
+      Style = tbsCheck
+    end
+    object tbSep1: TToolButton
+      Left = 233
+      Top = 2
+      Width = 8
+      Style = tbsSeparator
+    end
+    object tbUndo: TToolButton
+      Left = 241
+      Top = 2
+      Caption = 'Undo'
+      Hint = 'Undo (Ctrl+Z)'
+      OnClick = miUndoClick
+    end
+    object tbRedo: TToolButton
+      Left = 299
+      Top = 2
+      Caption = 'Redo'
+      Hint = 'Redo (Ctrl+Y)'
+      OnClick = miRedoClick
+    end
+    object tbSep2: TToolButton
+      Left = 357
+      Top = 2
+      Width = 8
+      Style = tbsSeparator
+    end
+    object tbDelete: TToolButton
+      Left = 365
+      Top = 2
+      Caption = 'Delete'
+      Hint = 'Delete the selected shape (Del)'
+      OnClick = miDeleteClick
+    end
+    object tbHole: TToolButton
+      Left = 423
+      Top = 2
+      Caption = 'Hole'
+      Hint = 'Turn the selected shape into a hole, or back (H)'
+      OnClick = miHoleClick
+    end
+    object tbSep3: TToolButton
+      Left = 481
+      Top = 2
+      Width = 8
+      Style = tbsSeparator
+    end
+    object tbFit: TToolButton
+      Left = 489
+      Top = 2
+      Caption = 'Fit'
+      Hint = 'Fit the drawing to the window (F)'
+      OnClick = miFitClick
+    end
+  end
+  object PanelRight: TPanel
+    Left = 740
+    Height = 646
+    Top = 30
     Width = 440
     Align = alRight
     BevelOuter = bvNone
-    ClientHeight = 576
+    ClientHeight = 646
     ClientWidth = 440
-    TabOrder = 0
+    TabOrder = 1
     object LabelSection: TLabel
       Left = 0
       Height = 28
@@ -28,17 +136,35 @@ object SecEditForm: TSecEditForm
       Width = 440
       Align = alTop
       AutoSize = False
-      BorderSpacing.Around = 4
       Caption = 'No file'
       Font.Style = [fsBold]
       Layout = tlCenter
       ParentColor = False
       ParentFont = False
     end
+    object ListProfiles: TListBox
+      Left = 0
+      Height = 120
+      Top = 28
+      Width = 440
+      Align = alTop
+      ItemHeight = 0
+      OnSelectionChange = ListProfilesSelectionChange
+      TabOrder = 0
+    end
+    object Splitter3: TSplitter
+      Cursor = crVSplit
+      Left = 0
+      Height = 5
+      Top = 148
+      Width = 440
+      Align = alTop
+      ResizeAnchor = akTop
+    end
     object GridProps: TStringGrid
       Left = 0
-      Height = 548
-      Top = 28
+      Height = 493
+      Top = 153
       Width = 440
       Align = alClient
       AutoFillColumns = True
@@ -65,15 +191,15 @@ object SecEditForm: TSecEditForm
       MouseWheelOption = mwGrid
       Options = [goFixedVertLine, goFixedHorzLine, goVertLine, goHorzLine, goRangeSelect, goRowSelect, goThumbTracking, goSmoothScroll]
       RowCount = 1
-      TabOrder = 0
+      TabOrder = 1
       OnDrawCell = GridPropsDrawCell
       OnKeyDown = GridPropsKeyDown
     end
   end
   object Splitter1: TSplitter
-    Left = 655
-    Height = 576
-    Top = 0
+    Left = 735
+    Height = 646
+    Top = 30
     Width = 5
     Align = alRight
     ResizeAnchor = akRight
@@ -81,22 +207,22 @@ object SecEditForm: TSecEditForm
   object PanelBottom: TPanel
     Left = 0
     Height = 112
-    Top = 464
-    Width = 655
+    Top = 564
+    Width = 735
     Align = alBottom
     BevelOuter = bvNone
     ClientHeight = 112
-    ClientWidth = 655
-    TabOrder = 2
+    ClientWidth = 735
+    TabOrder = 3
     object ListDiag: TListBox
       Left = 0
       Height = 112
       Top = 0
-      Width = 655
+      Width = 735
       Align = alClient
       ItemHeight = 20
       OnDrawItem = ListDiagDrawItem
-      ScrollWidth = 653
+      ScrollWidth = 733
       Style = lbOwnerDrawFixed
       TabOrder = 0
       TopIndex = -1
@@ -106,43 +232,51 @@ object SecEditForm: TSecEditForm
     Cursor = crVSplit
     Left = 0
     Height = 5
-    Top = 459
-    Width = 655
+    Top = 559
+    Width = 735
     Align = alBottom
     ResizeAnchor = akBottom
   end
   object PanelView: TPanel
     Left = 0
-    Height = 459
-    Top = 0
-    Width = 655
+    Height = 529
+    Top = 30
+    Width = 735
     Align = alClient
     BevelOuter = bvNone
     Caption = 'drawing surface (created at start-up)'
-    TabOrder = 4
+    TabOrder = 5
   end
   object StatusBar1: TStatusBar
     Left = 0
     Height = 24
-    Top = 616
-    Width = 1100
+    Top = 676
+    Width = 1180
     Panels = <
       item
-        Width = 520
+        Width = 300
       end
       item
-        Width = 220
+        Width = 560
       end
       item
-        Width = 200
+        Width = 170
+      end
+      item
+        Width = 140
       end>
     SimplePanel = False
   end
   object MainMenu1: TMainMenu
     Left = 48
-    Top = 40
+    Top = 48
     object miFile: TMenuItem
       Caption = '&File'
+      object miNew: TMenuItem
+        Caption = '&New'
+        ShortCut = 16462
+        OnClick = miNewClick
+      end
       object miOpen: TMenuItem
         Caption = '&Open...'
         ShortCut = 16463
@@ -152,6 +286,16 @@ object SecEditForm: TSecEditForm
         Caption = '&Reload'
         ShortCut = 116
         OnClick = miReloadClick
+      end
+      object miSave: TMenuItem
+        Caption = '&Save'
+        ShortCut = 16467
+        OnClick = miSaveClick
+      end
+      object miSaveAs: TMenuItem
+        Caption = 'Save &as...'
+        ShortCut = 24659
+        OnClick = miSaveAsClick
       end
       object miExport: TMenuItem
         Caption = '&Export .prop...'
@@ -165,6 +309,69 @@ object SecEditForm: TSecEditForm
         Caption = 'E&xit'
         OnClick = miExitClick
       end
+    end
+    object miEdit: TMenuItem
+      Caption = '&Edit'
+      object miUndo: TMenuItem
+        Caption = '&Undo'
+        ShortCut = 16474
+        OnClick = miUndoClick
+      end
+      object miRedo: TMenuItem
+        Caption = '&Redo'
+        ShortCut = 16473
+        OnClick = miRedoClick
+      end
+      object miSep3: TMenuItem
+        Caption = '-'
+      end
+      object miDelete: TMenuItem
+        Caption = '&Delete shape'
+        ShortCut = 46
+        OnClick = miDeleteClick
+      end
+      object miHole: TMenuItem
+        Caption = 'Toggle &hole'
+        ShortCut = 72
+        OnClick = miHoleClick
+      end
+    end
+    object miDraw: TMenuItem
+      Caption = '&Draw'
+      object miToolSelect: TMenuItem
+        Caption = '&Select'
+        Checked = True
+        GroupIndex = 1
+        RadioItem = True
+        OnClick = miToolClick
+      end
+      object miToolRect: TMenuItem
+        Tag = 1
+        Caption = '&Rectangle'
+        GroupIndex = 1
+        RadioItem = True
+        ShortCut = 82
+        OnClick = miToolClick
+      end
+      object miToolPolygon: TMenuItem
+        Tag = 2
+        Caption = '&Polygon'
+        GroupIndex = 1
+        RadioItem = True
+        ShortCut = 80
+        OnClick = miToolClick
+      end
+      object miToolCircle: TMenuItem
+        Tag = 3
+        Caption = '&Circle'
+        GroupIndex = 1
+        RadioItem = True
+        ShortCut = 67
+        OnClick = miToolClick
+      end
+    end
+    object miShapes: TMenuItem
+      Caption = 'S&hapes'
     end
     object miView: TMenuItem
       Caption = '&View'
@@ -194,11 +401,65 @@ object SecEditForm: TSecEditForm
         Caption = '&Bounding box'
         OnClick = miViewOptionClick
       end
+      object miSep4: TMenuItem
+        Caption = '-'
+      end
+      object miSnapObjects: TMenuItem
+        AutoCheck = True
+        Caption = 'Snap to &objects'
+        Checked = True
+        OnClick = miViewOptionClick
+      end
+      object miSnapGrid: TMenuItem
+        AutoCheck = True
+        Caption = 'Snap to g&rid'
+        OnClick = miViewOptionClick
+      end
+      object miOrtho: TMenuItem
+        AutoCheck = True
+        Caption = 'Ortho&gonal'
+        ShortCut = 79
+        OnClick = miViewOptionClick
+      end
+      object miSep5: TMenuItem
+        Caption = '-'
+      end
       object miAutoReload: TMenuItem
         AutoCheck = True
         Caption = '&Auto-reload when the file changes'
         Checked = True
         OnClick = miViewOptionClick
+      end
+      object miUnits: TMenuItem
+        Caption = '&Units'
+        object miUnitMm: TMenuItem
+          Caption = 'mm'
+          Checked = True
+          GroupIndex = 2
+          RadioItem = True
+          OnClick = miUnitClick
+        end
+        object miUnitCm: TMenuItem
+          Tag = 1
+          Caption = 'cm'
+          GroupIndex = 2
+          RadioItem = True
+          OnClick = miUnitClick
+        end
+        object miUnitM: TMenuItem
+          Tag = 2
+          Caption = 'm'
+          GroupIndex = 2
+          RadioItem = True
+          OnClick = miUnitClick
+        end
+        object miUnitIn: TMenuItem
+          Tag = 3
+          Caption = 'in'
+          GroupIndex = 2
+          RadioItem = True
+          OnClick = miUnitClick
+        end
       end
     end
     object miHelp: TMenuItem
@@ -213,7 +474,7 @@ object SecEditForm: TSecEditForm
     Title = 'Open section geometry'
     Filter = 'FEM3DGEO section (*.fgeo)|*.fgeo|All files|*.*'
     Left = 112
-    Top = 40
+    Top = 48
   end
   object SaveDialog1: TSaveDialog
     Title = 'Export section properties'
@@ -221,19 +482,27 @@ object SecEditForm: TSecEditForm
     Filter = 'Section properties (*.prop)|*.prop|All files|*.*'
     Options = [ofOverwritePrompt, ofEnableSizing, ofViewDetail]
     Left = 176
-    Top = 40
+    Top = 48
+  end
+  object SaveGeoDialog: TSaveDialog
+    Title = 'Save section geometry'
+    DefaultExt = '.fgeo'
+    Filter = 'FEM3DGEO section (*.fgeo)|*.fgeo|All files|*.*'
+    Options = [ofOverwritePrompt, ofEnableSizing, ofViewDetail]
+    Left = 240
+    Top = 48
   end
   object TimerReload: TTimer
     Interval = 500
     OnTimer = TimerReloadTimer
-    Left = 240
-    Top = 40
+    Left = 304
+    Top = 48
   end
   object TimerCalc: TTimer
     Enabled = False
-    Interval = 60
+    Interval = 120
     OnTimer = TimerCalcTimer
-    Left = 304
-    Top = 40
+    Left = 368
+    Top = 48
   end
 end

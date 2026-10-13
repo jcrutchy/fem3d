@@ -1,0 +1,42 @@
+# Draws a 100 x 200 plate with a 30 x 40 rectangular hole through the editing
+# code paths (tool clicks, snapping, default-hole rule, undo/redo) and checks
+# the result. $OUT is set by the test program (an environment variable).
+new mm
+snap none
+tool rect
+click -50 -100
+click 50 100
+expect profiles 1
+expect area 20000
+# a rectangle drawn inside the solid becomes a hole by itself
+click -15 -20
+click 15 20
+expect profiles 2
+expect area 18800
+undo
+expect profiles 1
+expect area 20000
+redo
+expect profiles 2
+expect area 18800
+# a circle in the hole region is an island (solid again): + pi r^2 (polygon approx.)
+tool circle
+click 0 0
+click 5 0
+expect profiles 3
+tool select
+select 3
+delete
+expect profiles 2
+# polygon tool: an L-shaped notch needs a closed shape; draw a triangle hole
+tool polygon
+click -40 70
+click -20 70
+click -30 90
+finish
+expect profiles 3
+undo
+expect profiles 2
+expect area 18800
+save $OUT
+export $OUT_PROP

@@ -35,10 +35,14 @@ type
     constructor Create;
     // Returns True if the file parsed AND produced a computable section.
     function Load(const AFileName: string): Boolean;
+    // Validates and analyses a model that is already in memory (an edited
+    // sketch); ADisplayName only supplies the section name when the model has none.
+    function SetModel(const AGeo: TFEMGeometryModel; const ADisplayName: string): Boolean;
     procedure ComputeFull;
     function FileChanged: Boolean;
     // Saves the .prop file exactly as femsection would write it.
-    procedure SaveProp(const OutFile: string);
+    // SourceName is written into the .prop header; empty = the file's name.
+    procedure SaveProp(const OutFile: string; const SourceName: string = '');
     // Bounding box of the polygon faces (False if there are none).
     function FaceBounds(out XMin, XMax, YMin, YMax: Double): Boolean;
   end;
@@ -56,7 +60,7 @@ end;
 
 function TSectionDoc.Load(const AFileName: string): Boolean;
 var
-  LoadErr, ConvErr: string;
+  LoadErr: string;
 begin
   FileName := AFileName;
   Loaded := False;
@@ -73,7 +77,21 @@ begin
     ErrorText := 'Could not read "' + ExtractFileName(AFileName) + '": ' + LoadErr;
     Exit(False);
   end;
+  Result := SetModel(Geo, AFileName);
+end;
+
+function TSectionDoc.SetModel(const AGeo: TFEMGeometryModel; const ADisplayName: string): Boolean;
+var
+  ConvErr: string;
+begin
+  Geo := AGeo;
   Loaded := True;
+  FacesOk := False;
+  FullDone := False;
+  ErrorText := '';
+  Faces := nil;
+  InitDiagnostics(Diags);
+  FillChar(Props, SizeOf(Props), 0);
 
   CheckGeometry(Geo, Diags);
 
@@ -88,7 +106,7 @@ begin
   if Geo.Header.HasSource and (Geo.Header.SourceName <> '') then
     Props.Name := Geo.Header.SourceName
   else
-    Props.Name := ChangeFileExt(ExtractFileName(AFileName), '');
+    Props.Name := ChangeFileExt(ExtractFileName(ADisplayName), '');
   if Geo.Header.HasUnits and (Geo.Header.LengthUnit <> '') then
     Props.LengthUnit := Geo.Header.LengthUnit
   else
@@ -129,12 +147,15 @@ begin
   Result := (A <> -1) and (A <> FileTime);
 end;
 
-procedure TSectionDoc.SaveProp(const OutFile: string);
+procedure TSectionDoc.SaveProp(const OutFile: string; const SourceName: string);
 begin
   if not FacesOk then
     raise Exception.Create('There is no valid section to save');
   if not FullDone then ComputeFull;
-  SavePropFile(Props, ExtractFileName(FileName), OutFile);
+  if SourceName <> '' then
+    SavePropFile(Props, SourceName, OutFile)
+  else
+    SavePropFile(Props, ExtractFileName(FileName), OutFile);
 end;
 
 function TSectionDoc.FaceBounds(out XMin, XMax, YMin, YMax: Double): Boolean;

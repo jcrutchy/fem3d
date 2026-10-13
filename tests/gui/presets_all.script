@@ -1,0 +1,13 @@
+# Every shape in the Shapes menu builds, appears and gives a positive area.
+new mm
+preset rect 100 200
+expect area 20000
+preset chs 168.3 6.4
+expect profiles 2
+preset rhs 100 150 6
+expect profiles 2
+preset ibeam 203.2 133 7.8 5.8 8.9
+preset channel 200 75 12.5 6 12
+preset angle 100 150 12 10
+preset tee 150 150 12 8
+expect profiles 1
