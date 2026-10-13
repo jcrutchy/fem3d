@@ -1241,10 +1241,7 @@ begin
   except
     on E: Exception do
     begin
-      try
-        WriteLn(StdErr, 'femsecedit: ', E.Message);
-      except
-      end;
+      WriteStdErr('femsecedit: ' + E.Message);
       ExitCode := 3;
     end;
   end;
